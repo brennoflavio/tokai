@@ -1,0 +1,19 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tokai video</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+  </head>
+  <body>
+    <main>
+      <h1>Tokai</h1>
+      <video controls>
+        <source src="{{ media_url }}" type="video/mp4">
+        Your browser does not support MP4 video playback.
+      </video>
+    </main>
+  </body>
+</html>

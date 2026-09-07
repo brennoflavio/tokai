@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 2rem;
+}
+
+video {
+  max-width: 100%;
+}

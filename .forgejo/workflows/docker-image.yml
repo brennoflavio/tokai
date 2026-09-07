@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Publish container image
+enable-email-notifications: true
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  REGISTRY_HOST: git.brennoflavio.com.br
+  IMAGE_REPOSITORY: git.brennoflavio.com.br/brennoflavio/tokai
+
+jobs:
+  publish:
+    if: forgejo.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: https://code.forgejo.org/docker/setup-buildx-action@v3
+
+      - name: Log in to container registry
+        uses: https://code.forgejo.org/docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_HOST }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Set image tag
+        id: image
+        run: |
+          short_hash=$(git rev-parse --short "${{ forgejo.sha }}")
+          echo "tag=${short_hash}" >> "${FORGEJO_OUTPUT:-$GITHUB_OUTPUT}"
+
+      - name: Build and push container image
+        uses: https://code.forgejo.org/docker/build-push-action@v6
+        with:
+          push: true
+          context: .
+          tags: ${{ env.IMAGE_REPOSITORY }}:${{ steps.image.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache
+          cache-to: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache,mode=max
+
+concurrency:
+  group: ${{ forgejo.workflow }}-${{ forgejo.ref_name }}
+  cancel-in-progress: false

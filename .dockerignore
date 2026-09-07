@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+.git
+.venv
+.pytest_cache
+__pycache__
+*.py[oc]
+dist
