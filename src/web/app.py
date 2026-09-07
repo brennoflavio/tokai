@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 PACKAGE_DIRECTORY = Path(__file__).parent
 IDENTIFIER_RE = re.compile(r"[A-Za-z0-9]+")
 SHORT_CODE_PATH_RE = re.compile(r"([A-Za-z0-9]+)/?")
-VIDEO_PATH_RE = re.compile(r"^@[A-Za-z0-9_.]+/video/([0-9]+)/?$")
+VIDEO_PATH_RE = re.compile(r"^@[A-Za-z0-9_.]*/video/([0-9]+)/?$")
 RESERVED_PATHS = frozenset({"docs", "redoc", "static", "media"})
 
 app = FastAPI(docs_url=None, redoc_url=None)

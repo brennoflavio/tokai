@@ -19,7 +19,8 @@ def test_root_renders_html_template() -> None:
     assert "<script" not in response.text
 
 
-def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch) -> None:
+@pytest.mark.parametrize("handle", ["nerublanco", ""])
+def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch, handle: str) -> None:
     video_id = "7542076400346451232"
     media = b"\x00\x00\x00\x0cftypisomdata"
     calls: list[str] = []
@@ -30,7 +31,7 @@ def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch) -> None:
 
     monkeypatch.setattr("web.app.fetch_video", fake_fetch_video)
     page = client.get(
-        f"/@nerublanco/video/{video_id}?share_app_id=1233&share_item_id={video_id}"
+        f"/@{handle}/video/{video_id}?share_app_id=1233&share_item_id={video_id}"
     )
 
     assert page.status_code == 200
