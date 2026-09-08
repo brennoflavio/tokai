@@ -13,8 +13,25 @@ env:
   IMAGE_REPOSITORY: git.brennoflavio.com.br/brennoflavio/tokai
 
 jobs:
+  test:
+    name: Validate source
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: https://github.com/astral-sh/setup-uv@v6
+
+      - name: Run tests
+        run: uv run pytest
+
   publish:
     if: forgejo.ref == 'refs/heads/master'
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -47,6 +64,54 @@ jobs:
           tags: ${{ env.IMAGE_REPOSITORY }}:${{ steps.image.outputs.tag }}
           cache-from: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache
           cache-to: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache,mode=max
+
+      - name: Update GitOps image tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.BRENNO_OPS_PAT }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w 0)"
+          git -c http.https://github.com/.extraheader="$auth_header" clone --branch master --single-branch https://github.com/brennoflavio/brenno-ops.git
+          cd brenno-ops
+
+          deployment=application/brennoflavio/tokai/deployment.yaml
+          image_prefix="        image: ${IMAGE_REPOSITORY}:"
+          awk -v prefix="$image_prefix" -v tag="$IMAGE_TAG" '
+            index($0, prefix) == 1 {
+              if (++matches > 1) {
+                print "expected one tokai image" > "/dev/stderr"
+                exit 1
+              }
+              print prefix tag
+              next
+            }
+            { print }
+            END {
+              if (matches != 1) {
+                print "tokai image not found" > "/dev/stderr"
+                exit 1
+              }
+            }
+          ' "$deployment" > "${deployment}.tmp"
+          mv "${deployment}.tmp" "$deployment"
+
+          if git diff --quiet -- "$deployment"; then
+            exit 0
+          fi
+
+          git config user.name "Forgejo Actions"
+          git config user.email "actions@brennoflavio.com.br"
+          git add "$deployment"
+          git commit -m "chore(tokai): update image tag to ${IMAGE_TAG}"
+
+          for attempt in 1 2 3; do
+            if git -c http.https://github.com/.extraheader="$auth_header" push origin HEAD:master; then
+              exit 0
+            fi
+            git -c http.https://github.com/.extraheader="$auth_header" fetch origin master
+            git rebase origin/master
+          done
+          exit 1
 
 concurrency:
   group: ${{ forgejo.workflow }}-${{ forgejo.ref_name }}
