@@ -110,5 +110,5 @@ async def video(request: Request, tiktok_path: str):
     return templates.TemplateResponse(
         request=request,
         name="video.html",
-        context={"media_url": request.url_for("media", identifier=match.group(1))},
+        context={"media_url": request.url_for("media", identifier=match.group(1)).path},
     )

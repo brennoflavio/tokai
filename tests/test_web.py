@@ -15,11 +15,21 @@ def test_root_renders_html_template() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "/static/styles.css" in response.text
+    assert 'href="/static/styles.css"' in response.text
     assert "A privacy preserving frontend for TikTok" in response.text
     assert 'name="url"' in response.text
     assert 'method="post"' in response.text
     assert "<script" not in response.text
+
+
+def test_generated_same_origin_urls_preserve_root_path() -> None:
+    root_path_client = TestClient(app, root_path="/tokai")
+
+    home = root_path_client.get("/")
+    page = root_path_client.get("/ZMAVwmojg/")
+
+    assert 'href="/tokai/static/styles.css"' in home.text
+    assert '<source src="/tokai/media/ZMAVwmojg" type="video/mp4">' in page.text
 
 
 def test_root_redirects_submitted_tiktok_video_url() -> None:
@@ -76,7 +86,7 @@ def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch, handle: str
     )
 
     assert page.status_code == 200
-    assert f'<source src="http://testserver/media/{video_id}" type="video/mp4">' in page.text
+    assert f'<source src="/media/{video_id}" type="video/mp4">' in page.text
     assert "<script" not in page.text
     assert calls == []
 
@@ -101,7 +111,7 @@ def test_tiktok_short_code_renders_playable_scraped_mp4(monkeypatch) -> None:
     page = client.get(f"/{short_code}/?share_app_id=1233")
 
     assert page.status_code == 200
-    assert f'<source src="http://testserver/media/{short_code}" type="video/mp4">' in page.text
+    assert f'<source src="/media/{short_code}" type="video/mp4">' in page.text
 
     media_response = client.get(f"/media/{short_code}")
 
