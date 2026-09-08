@@ -1,16 +1,29 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tokai</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
-  </head>
-  <body>
-    <main>
-      <h1>Tokai</h1>
-      <p>A privacy-respecting TikTok frontend.</p>
-    </main>
-  </body>
-</html>
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero" aria-labelledby="page-title">
+  <h1 id="page-title">Tok<span>AI</span></h1>
+  <p class="lede">A privacy preserving frontend for TikTok</p>
+
+  <form class="url-form" action="/" method="post">
+    <label class="visually-hidden" for="tiktok-url">TikTok URL</label>
+    <input
+      id="tiktok-url"
+      name="url"
+      type="url"
+      inputmode="url"
+      placeholder="Paste a TikTok URL"
+      autocomplete="url"
+      {% if error %}aria-describedby="url-error" aria-invalid="true"{% else %}aria-describedby="url-hint"{% endif %}
+      required
+    >
+    <button type="submit">Watch privately</button>
+  </form>
+  {% if error %}
+  <p id="url-error" class="form-message" role="alert">{{ error }}</p>
+  {% else %}
+  <p id="url-hint" class="form-hint">Paste a public TikTok video link to view it here.</p>
+  {% endif %}
+</section>
+{% endblock %}

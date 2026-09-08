@@ -16,7 +16,48 @@ def test_root_renders_html_template() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "/static/styles.css" in response.text
+    assert "A privacy preserving frontend for TikTok" in response.text
+    assert 'name="url"' in response.text
+    assert 'method="post"' in response.text
     assert "<script" not in response.text
+
+
+def test_root_redirects_submitted_tiktok_video_url() -> None:
+    response = client.post(
+        "/",
+        data={"url": "https://www.tiktok.com/@nerublanco/video/7542076400346451232?share_app_id=1233"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/@nerublanco/video/7542076400346451232"
+
+
+@pytest.mark.parametrize("host", ["vm.tiktok.com", "vt.tiktok.com"])
+def test_root_redirects_submitted_tiktok_short_link(host: str) -> None:
+    response = client.post(
+        "/",
+        data={"url": f"https://{host}/ZMAVwmojg/"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/ZMAVwmojg/"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/video",
+        "https://www.tiktok.com/explore",
+        "https://[not-a-host",
+    ],
+)
+def test_root_rejects_unsupported_tiktok_url(url: str) -> None:
+    response = client.post("/", data={"url": url})
+
+    assert response.status_code == 400
+    assert "Enter a valid TikTok video URL." in response.text
 
 
 @pytest.mark.parametrize("handle", ["nerublanco", ""])
@@ -35,7 +76,7 @@ def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch, handle: str
     )
 
     assert page.status_code == 200
-    assert f'<video controls>\n        <source src="http://testserver/media/{video_id}" type="video/mp4">' in page.text
+    assert f'<source src="http://testserver/media/{video_id}" type="video/mp4">' in page.text
     assert "<script" not in page.text
     assert calls == []
 
@@ -97,6 +138,16 @@ def test_media_route_reports_scraper_errors(monkeypatch, error: Exception, statu
     monkeypatch.setattr("web.app.fetch_video", fake_fetch_video)
 
     assert client.get("/media/7542076400346451232").status_code == status_code
+
+
+def test_missing_page_renders_standard_404_template() -> None:
+    response = client.get("/missing/page")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Page not found" in response.text
+    assert 'href="/">Go home</a>' in response.text
+    assert "<script" not in response.text
 
 
 def test_static_css_is_served() -> None:

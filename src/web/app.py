@@ -3,8 +3,11 @@
 
 from pathlib import Path
 import re
+from typing import Annotated
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Form, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from scraper import ContentUnavailableError, ScraperError, fetch_video
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -14,16 +17,62 @@ IDENTIFIER_RE = re.compile(r"[A-Za-z0-9]+")
 SHORT_CODE_PATH_RE = re.compile(r"([A-Za-z0-9]+)/?")
 VIDEO_PATH_RE = re.compile(r"^@[A-Za-z0-9_.]*/video/([0-9]+)/?$")
 RESERVED_PATHS = frozenset({"docs", "redoc", "static", "media"})
+TIKTOK_VIDEO_HOSTS = frozenset({"tiktok.com", "www.tiktok.com", "m.tiktok.com"})
+TIKTOK_SHORT_LINK_HOSTS = frozenset({"vm.tiktok.com", "vt.tiktok.com"})
 
 app = FastAPI(docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=PACKAGE_DIRECTORY / "static"), name="static")
 templates = Jinja2Templates(directory=PACKAGE_DIRECTORY / "templates")
 
 
+@app.exception_handler(404)
+async def not_found(request: Request, _: HTTPException):
+    """Render a consistent HTML response for missing pages."""
+    return templates.TemplateResponse(
+        request=request,
+        name="not_found.html",
+        status_code=404,
+    )
+
+
 @app.get("/", include_in_schema=False)
 async def home(request: Request):
     """Render the initial web interface."""
     return templates.TemplateResponse(request=request, name="index.html")
+
+
+@app.post("/", include_in_schema=False)
+async def submitted_video(request: Request, url: Annotated[str, Form()]):
+    """Open a submitted TikTok video URL without retaining its query string."""
+    try:
+        parsed_url = urlparse(url)
+        hostname = parsed_url.hostname
+    except ValueError:
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={"error": "Enter a valid TikTok video URL."},
+            status_code=400,
+        )
+
+    tiktok_path = parsed_url.path.lstrip("/")
+    is_video_url = (
+        hostname in TIKTOK_VIDEO_HOSTS
+        and VIDEO_PATH_RE.fullmatch(tiktok_path) is not None
+    )
+    is_short_link = (
+        hostname in TIKTOK_SHORT_LINK_HOSTS
+        and SHORT_CODE_PATH_RE.fullmatch(tiktok_path) is not None
+    )
+    if not (parsed_url.scheme in {"http", "https"} and (is_video_url or is_short_link)):
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={"error": "Enter a valid TikTok video URL."},
+            status_code=400,
+        )
+
+    return RedirectResponse(url=f"/{tiktok_path}", status_code=303)
 
 
 @app.get("/docs", include_in_schema=False)
