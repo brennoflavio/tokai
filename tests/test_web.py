@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import logging
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -70,6 +71,20 @@ def test_root_rejects_unsupported_tiktok_url(url: str) -> None:
     assert "Enter a valid TikTok video URL." in response.text
 
 
+def test_rejected_submission_logs_a_redacted_url(caplog: pytest.LogCaptureFixture) -> None:
+    tokai_logger = logging.getLogger("tokai")
+    tokai_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="tokai"):
+            response = client.post("/", data={"url": "https://example.com/video?token=secret"})
+    finally:
+        tokai_logger.removeHandler(caplog.handler)
+
+    assert response.status_code == 400
+    assert "url=https://example.com/video" in caplog.text
+    assert "token=secret" not in caplog.text
+
+
 @pytest.mark.parametrize("handle", ["nerublanco", ""])
 def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch, handle: str) -> None:
     video_id = "7542076400346451232"
@@ -96,6 +111,26 @@ def test_tiktok_video_path_renders_playable_scraped_mp4(monkeypatch, handle: str
     assert media_response.headers["content-type"].startswith("video/mp4")
     assert media_response.content == media
     assert calls == [video_id]
+
+
+def test_media_debug_logging_records_the_web_route(monkeypatch, caplog: pytest.LogCaptureFixture) -> None:
+    async def fake_fetch_video(identifier: str) -> SimpleNamespace:
+        return SimpleNamespace(media=b"video", byte_count=5)
+
+    monkeypatch.setattr("web.app.fetch_video", fake_fetch_video)
+
+    tokai_logger = logging.getLogger("tokai")
+    tokai_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="tokai"):
+            response = client.get("/media/7542076400346451232?share_app_id=1233")
+    finally:
+        tokai_logger.removeHandler(caplog.handler)
+
+    assert response.status_code == 200
+    assert any(message.startswith("Fetching media") for message in caplog.messages)
+    assert any(message.startswith("Returning media") for message in caplog.messages)
+    assert "share_app_id=1233" not in caplog.text
 
 
 def test_tiktok_short_code_renders_playable_scraped_mp4(monkeypatch) -> None:

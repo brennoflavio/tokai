@@ -4,4 +4,8 @@ services:
     build:
       context: .
     ports:
-      - "8000:8000"
+      - "${TOKAI_PORT-8000}:${TOKAI_PORT-8000}"
+    environment:
+      TOKAI_HOST: ${TOKAI_HOST-0.0.0.0}
+      TOKAI_PORT: ${TOKAI_PORT-8000}
+      TOKAI_LOG_LEVEL: ${TOKAI_LOG_LEVEL-info}

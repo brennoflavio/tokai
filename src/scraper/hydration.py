@@ -66,7 +66,13 @@ def parse_hydration(html: str, expected_id: str) -> HydratedVideo | None:
         video = item["video"]
         play_addr = video["playAddr"]
         parsed_address = urlsplit(play_addr)
-        if not isinstance(play_addr, str) or parsed_address.scheme != "https" or not parsed_address.hostname:
+        if (
+            not isinstance(play_addr, str)
+            or parsed_address.scheme != "https"
+            or not parsed_address.hostname
+            or parsed_address.username
+            or parsed_address.password
+        ):
             raise ProtocolError("TikTok video metadata has no HTTPS playback address")
         if video.get("format") != "mp4":
             raise ContentUnavailableError("Only public MP4 video posts are supported")

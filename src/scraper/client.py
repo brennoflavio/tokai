@@ -17,11 +17,14 @@ from .errors import (
     MediaIntegrityError,
     MediaTooLargeError,
     ProtocolError,
+    ScraperError,
     TransportError,
 )
 from .hydration import HydratedVideo, parse_hydration
 from .identifiers import Identifier, parse_identifier, validate_redirect_target, video_id_from_page_url
 from .models import ScrapedVideo
+from utils.logging import get_logger
+from utils.urls import redact_url
 
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -38,6 +41,8 @@ MEDIA_HEADERS: Mapping[str, str] = {
 }
 MAX_REDIRECTS = 5
 DEFAULT_MAX_MEDIA_BYTES = 100 * 1024 * 1024
+
+logger = get_logger("scraper")
 
 
 class TikTokScraper:
@@ -70,6 +75,7 @@ class TikTokScraper:
             timeout=self._timeout,
             transport=self._transport,
         )
+        logger.debug("Opened scraper session max_media_bytes=%d", self.max_media_bytes)
         return self
 
     async def __aexit__(
@@ -81,6 +87,7 @@ class TikTokScraper:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+            logger.debug("Closed scraper session")
 
     @property
     def _session(self) -> httpx.AsyncClient:
@@ -90,19 +97,35 @@ class TikTokScraper:
 
     async def _get_page(self, url: str, expected_id: str | None) -> tuple[str, str]:
         """Resolve a generated page route manually and return its final document."""
-        for _ in range(MAX_REDIRECTS + 1):
+        for redirect_count in range(MAX_REDIRECTS + 1):
+            logger.debug(
+                "Requesting TikTok page redirect_count=%d url=%s expected_id=%s",
+                redirect_count,
+                redact_url(url),
+                expected_id,
+            )
             try:
                 response = await self._session.get(url, headers=PAGE_HEADERS)
             except httpx.RemoteProtocolError as exc:
+                logger.debug("TikTok page protocol error error_type=%s", type(exc).__name__)
                 raise ProtocolError("TikTok page redirect is invalid") from exc
             except httpx.HTTPError as exc:
+                logger.debug("TikTok page transport error error_type=%s", type(exc).__name__)
                 raise TransportError("Could not retrieve TikTok video page") from exc
 
+            logger.debug(
+                "Received TikTok page status_code=%d url=%s is_redirect=%s",
+                response.status_code,
+                redact_url(str(response.url)),
+                response.is_redirect,
+            )
             if response.is_redirect:
                 location = response.headers.get("Location")
                 if not location:
+                    logger.debug("TikTok page redirect is missing a location")
                     raise ProtocolError("TikTok redirect did not include a location")
                 url = urljoin(str(response.url), location)
+                logger.debug("Following TikTok page redirect target=%s", redact_url(url))
                 validate_redirect_target(url)
                 continue
 
@@ -116,14 +139,39 @@ class TikTokScraper:
                 raise ProtocolError("TikTok did not resolve to a supported video page")
             if expected_id is not None and resolved_id != expected_id:
                 raise ContentUnavailableError("TikTok redirect changed the requested video")
+            logger.debug(
+                "Resolved TikTok page video_id=%s html_bytes=%d",
+                resolved_id,
+                len(response.content),
+            )
             return str(response.url), response.text
         raise ProtocolError("TikTok redirect limit exceeded")
 
     async def fetch_video(self, identifier: str) -> ScrapedVideo:
         """Retrieve one public post as a verified, bounded in-memory MP4."""
-        parsed = parse_identifier(identifier)
-        async with self._fetch_lock:
-            return await self._fetch_identifier(parsed)
+        try:
+            parsed = parse_identifier(identifier)
+            logger.debug(
+                "Started scraper fetch identifier=%s identifier_kind=%s",
+                parsed.value,
+                "video_id" if parsed.is_video_id else "short_code",
+            )
+            async with self._fetch_lock:
+                logger.debug("Acquired scraper fetch lock")
+                result = await self._fetch_identifier(parsed)
+        except ScraperError as exc:
+            logger.debug("Scraper fetch failed error_type=%s error=%s", type(exc).__name__, exc)
+            raise
+        except Exception as exc:
+            logger.debug("Scraper fetch failed unexpectedly error_type=%s", type(exc).__name__)
+            raise
+        logger.debug(
+            "Completed scraper fetch video_id=%s byte_count=%d checksum_verified=%s",
+            result.metadata.video_id,
+            result.byte_count,
+            result.file_hash_verified,
+        )
+        return result
 
     async def _fetch_identifier(self, identifier: Identifier) -> ScrapedVideo:
         expected_id = identifier.value if identifier.is_video_id else None
@@ -132,25 +180,43 @@ class TikTokScraper:
         assert expected_id is not None  # guaranteed by _get_page
 
         for attempt in range(2):
+            logger.debug("Parsing TikTok hydration attempt=%d video_id=%s", attempt + 1, expected_id)
             hydrated = parse_hydration(html, expected_id)
             if hydrated is not None:
+                logger.debug("Validated TikTok hydration video_id=%s", hydrated.metadata.video_id)
                 return await self._download_media(hydrated)
             if attempt == 0 and 'data-source="downgrade-mssdk-preload"' in html:
+                logger.debug("Retrying TikTok hydration after app-shell response delay_seconds=1")
                 await asyncio.sleep(1)
                 page_url, html = await self._get_page(page_url, expected_id)
                 continue
+            logger.debug("TikTok hydration data is missing attempt=%d", attempt + 1)
             raise ProtocolError("TikTok page has no video hydration data")
         raise AssertionError("unreachable")
 
     async def _download_media(self, hydrated: HydratedVideo) -> ScrapedVideo:
         expected_size, expected_hash = _media_expectations(hydrated.video, hydrated.play_addr)
+        logger.debug(
+            "Prepared TikTok media download url=%s expected_size=%s checksum_expected=%s",
+            redact_url(hydrated.play_addr),
+            expected_size,
+            expected_hash is not None,
+        )
         if expected_size is not None and expected_size > self.max_media_bytes:
             raise MediaTooLargeError("TikTok media exceeds the configured byte limit")
 
         try:
+            logger.debug("Requesting TikTok media url=%s", redact_url(hydrated.play_addr))
             async with self._session.stream(
                 "GET", hydrated.play_addr, headers=MEDIA_HEADERS
             ) as response:
+                logger.debug(
+                    "Received TikTok media status_code=%d content_type=%s content_encoding=%s content_length=%s",
+                    response.status_code,
+                    _content_type(response),
+                    _content_encoding(response),
+                    response.headers.get("Content-Length"),
+                )
                 if response.status_code in {401, 403, 404}:
                     raise ContentUnavailableError("TikTok media is unavailable")
                 if response.status_code != 200:
@@ -165,12 +231,15 @@ class TikTokScraper:
 
                 payload = bytearray()
                 digest = hashlib.md5(usedforsecurity=False)
+                chunk_count = 0
                 async for chunk in response.aiter_raw():
                     if len(payload) + len(chunk) > self.max_media_bytes:
                         raise MediaTooLargeError("TikTok media exceeds the configured byte limit")
                     payload.extend(chunk)
                     digest.update(chunk)
+                    chunk_count += 1
         except httpx.HTTPError as exc:
+            logger.debug("TikTok media transport error error_type=%s", type(exc).__name__)
             raise TransportError("Could not retrieve TikTok media") from exc
 
         size = len(payload)
@@ -181,6 +250,12 @@ class TikTokScraper:
         checksum = digest.hexdigest()
         if expected_hash is not None and checksum != expected_hash:
             raise MediaIntegrityError("TikTok media checksum does not match its rendition metadata")
+        logger.debug(
+            "Validated TikTok media byte_count=%d chunk_count=%d checksum_verified=%s",
+            size,
+            chunk_count,
+            expected_hash is not None,
+        )
         return ScrapedVideo(
             metadata=hydrated.metadata,
             media=bytes(payload),

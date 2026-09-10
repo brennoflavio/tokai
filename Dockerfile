@@ -14,9 +14,12 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 ENV UV_CACHE_DIR=/tmp/uv-cache
+ENV TOKAI_HOST=0.0.0.0
+ENV TOKAI_PORT=8000
+ENV TOKAI_LOG_LEVEL=info
 RUN useradd --uid 10001 --create-home --user-group tokai
 USER tokai
 
 EXPOSE 8000
 
-CMD ["uv", "run", "--no-sync", "uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD exec uv run --no-sync python -m web.main 2>&1

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -106,6 +107,36 @@ async def test_numeric_identifier_returns_redacted_metadata_and_verified_media()
 
 
 @pytest.mark.anyio
+async def test_debug_logging_records_scrape_lifecycle_without_signed_query_values(caplog: pytest.LogCaptureFixture) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.tiktok.com":
+            return response(request, content=hydration_html().encode(), **{"Content-Type": "text/html"})
+        return response(
+            request,
+            **{"Content-Type": "video/mp4", "Content-Length": str(len(MP4))},
+        )
+
+    tokai_logger = logging.getLogger("tokai")
+    tokai_logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="tokai"):
+            await fetch_video(VIDEO_ID, transport=httpx.MockTransport(handler))
+    finally:
+        tokai_logger.removeHandler(caplog.handler)
+
+    messages = caplog.messages
+    assert any(message.startswith("Started scraper fetch") for message in messages)
+    assert any(message.startswith("Requesting TikTok page") for message in messages)
+    assert any(message.startswith("Resolved TikTok page") for message in messages)
+    assert any(message.startswith("Validated TikTok hydration") for message in messages)
+    assert any(message.startswith("Received TikTok media") for message in messages)
+    assert any(message.startswith("Validated TikTok media") for message in messages)
+    assert any(message.startswith("Completed scraper fetch") for message in messages)
+    assert SIGNED_URL not in caplog.text
+    assert "https://cdn.tiktok.com/video.mp4" in caplog.text
+
+
+@pytest.mark.anyio
 async def test_short_code_redirect_keeps_page_cookie_referer_and_signed_url() -> None:
     requests: list[httpx.Request] = []
 
@@ -177,6 +208,7 @@ async def test_unsafe_redirect_is_rejected(location: str) -> None:
             '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">{not json}</script>',
             ProtocolError,
         ),
+        (hydration_html(video={"playAddr": "https://token@cdn.tiktok.com/video.mp4"}), ProtocolError),
     ],
 )
 async def test_hydration_identity_availability_and_schema_failures(
