@@ -128,6 +128,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install rsync
+        shell: bash
+        run: |
+          if ! command -v rsync >/dev/null; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update
+              apt-get install --yes rsync
+            else
+              sudo apt-get update
+              sudo apt-get install --yes rsync
+            fi
+          fi
+
       - name: Configure SSH
         shell: bash
         env:
