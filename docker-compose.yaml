@@ -4,7 +4,8 @@ services:
     build:
       context: .
     ports:
-      - "${TOKAI_PORT-8000}:${TOKAI_PORT-8000}"
+      - "127.0.0.1:${TOKAI_PORT-8000}:${TOKAI_PORT-8000}"
+    restart: unless-stopped
     environment:
       TOKAI_HOST: ${TOKAI_HOST-0.0.0.0}
       TOKAI_PORT: ${TOKAI_PORT-8000}

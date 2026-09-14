@@ -113,6 +113,87 @@ jobs:
           done
           exit 1
 
+  deploy-vps:
+    name: Deploy to VPS
+    if: forgejo.ref == 'refs/heads/master'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      VPS_USER: tokai
+      VPS_DEPLOY_PATH: /home/tokai/tokai
+
+    steps:
+      - name: Checkout code
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          : "${VPS_SSH_PRIVATE_KEY:?Set the VPS_SSH_PRIVATE_KEY secret}"
+          : "${VPS_SSH_KNOWN_HOSTS:?Set the VPS_SSH_KNOWN_HOSTS secret}"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Copy source to VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          : "${VPS_HOST:?Set the VPS_HOST secret}"
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+          )
+          destination="$VPS_USER@$VPS_HOST:$VPS_DEPLOY_PATH/"
+          ssh "${ssh_options[@]}" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_DEPLOY_PATH'"
+          rsync -az --delete \
+            --exclude .git \
+            --exclude .venv \
+            --exclude .pytest_cache \
+            --exclude dist \
+            --exclude .env \
+            -e "ssh ${ssh_options[*]}" \
+            ./ "$destination"
+
+      - name: Start Tokai
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          : "${VPS_HOST:?Set the VPS_HOST secret}"
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+          )
+          ssh "${ssh_options[@]}" "$VPS_USER@$VPS_HOST" \
+            "cd '$VPS_DEPLOY_PATH' &&
+             docker compose up -d --build --remove-orphans &&
+             for attempt in \$(seq 1 30); do
+               if docker compose exec -T tokai python -c \"from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null; then
+                 exit 0
+               fi
+               sleep 2
+             done
+             docker compose logs --tail=100 tokai
+             exit 1"
+
+      - name: Remove deployment key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/id_ed25519"
+
 concurrency:
   group: ${{ forgejo.workflow }}-${{ forgejo.ref_name }}
   cancel-in-progress: false
