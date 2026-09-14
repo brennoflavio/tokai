@@ -4,6 +4,14 @@
 
 Privacy respecting frontend for TikTok. Inspired by Nitter, Proxitok, OffTikTok
 
+## Public instances
+
+| URL | CDN | Country |
+| --- | --- | --- |
+| [tokai.brennoflavio.com.br](https://tokai.brennoflavio.com.br) | No | BR |
+
+The same list is available in [instances.json](instances.json).
+
 ## AI disclaimer and policy
 
 This project makes use of AI in the following forms:
