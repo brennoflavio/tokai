@@ -3,10 +3,12 @@ name: Publish container image
 enable-email-notifications: true
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (for example, v1.2.3)
+        required: true
+        type: string
 
 env:
   REGISTRY_HOST: git.brennoflavio.com.br
@@ -30,7 +32,6 @@ jobs:
         run: uv run pytest
 
   publish:
-    if: forgejo.ref == 'refs/heads/master'
     needs: test
     runs-on: ubuntu-latest
 
@@ -52,9 +53,34 @@ jobs:
 
       - name: Set image tag
         id: image
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          short_hash=$(git rev-parse --short "${{ forgejo.sha }}")
-          echo "tag=${short_hash}" >> "${FORGEJO_OUTPUT:-$GITHUB_OUTPUT}"
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must use the format vx.y.z" >&2
+            exit 1
+          fi
+          echo "tag=${VERSION}" >> "${FORGEJO_OUTPUT:-$GITHUB_OUTPUT}"
+
+      - name: Ensure version is unused
+        env:
+          VERSION: ${{ steps.image.outputs.tag }}
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: |
+          url="${FORGEJO_SERVER_URL%/}/api/v1/repos/${{ forgejo.repository }}/tags/${VERSION}"
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: token ${FORGEJO_TOKEN}" "$url")
+          case "$status" in
+            404) ;;
+            200)
+              echo "tag ${VERSION} already exists" >&2
+              exit 1
+              ;;
+            *)
+              echo "failed to check whether tag ${VERSION} exists (HTTP ${status})" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Build and push container image
         uses: https://code.forgejo.org/docker/build-push-action@v6
@@ -64,6 +90,15 @@ jobs:
           tags: ${{ env.IMAGE_REPOSITORY }}:${{ steps.image.outputs.tag }}
           cache-from: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache
           cache-to: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache,mode=max
+
+      - name: Create release
+        uses: https://code.forgejo.org/actions/forgejo-release@v2
+        with:
+          direction: upload
+          tag: ${{ steps.image.outputs.tag }}
+          sha: ${{ forgejo.sha }}
+          token: ${{ forgejo.token }}
+          skip-assets: true
 
       - name: Update GitOps image tag
         env:
@@ -208,5 +243,5 @@ jobs:
         run: rm -f "$HOME/.ssh/id_ed25519"
 
 concurrency:
-  group: ${{ forgejo.workflow }}-${{ forgejo.ref_name }}
+  group: ${{ forgejo.workflow }}-${{ forgejo.event_name }}-${{ inputs.version }}
   cancel-in-progress: false

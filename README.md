@@ -14,6 +14,10 @@ The same list is available in [instances.json](instances.json).
 
 ## AI disclaimer and policy
 
+In short:
+- AI for coding: ok
+- AI for writing: bad
+
 This project makes use of AI in the following forms:
 - The reverse engineer work of TikTok API's is fully automated by an AI agent, without human supervision.
   It publishes documentation and examples of how to extract videos from TikTok frontend.
@@ -23,3 +27,8 @@ This project makes use of AI in the following forms:
 The thesis of this project is that capable AI agents can keep up an-up-to-date documentation of how TikTok
 works, so it's more maintainable than previous solutions. A weekly job runs and if any drift is found by AI,
 the changes are incorporated into the scraper code.
+
+## License
+
+Tokai is AGPL software. You're free to host and modify it, providded you publish your modifications. See [LICENSE](LICENSE)
+for more information

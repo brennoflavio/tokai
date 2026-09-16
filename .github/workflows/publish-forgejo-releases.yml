@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Publish Forgejo releases
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: forgejo-release-sync
+  cancel-in-progress: false
+
+env:
+  FORGEJO_RELEASES_URL: https://git.brennoflavio.com.br/api/v1/repos/brennoflavio/tokai/releases
+  FORGEJO_REPOSITORY_URL: https://git.brennoflavio.com.br/brennoflavio/tokai.git
+  GHCR_IMAGE: ghcr.io/brennoflavio/tokai
+
+jobs:
+  discover:
+    name: Find unpublished Forgejo releases
+    runs-on: ubuntu-latest
+    outputs:
+      releases: ${{ steps.releases.outputs.releases }}
+
+    steps:
+      - name: Find releases not published on GitHub
+        id: releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          response=$(mktemp)
+          releases=$(mktemp)
+          page=1
+          while :; do
+            status=$(curl --silent --show-error --output "$response" --write-out '%{http_code}' "$FORGEJO_RELEASES_URL?limit=50&page=${page}")
+            if [[ "$status" != 200 ]]; then
+              echo "failed to list Forgejo releases (HTTP ${status})" >&2
+              exit 1
+            fi
+            jq --exit-status 'type == "array"' "$response" >/dev/null
+
+            count=$(jq 'length' "$response")
+            if ((count == 0)); then
+              break
+            fi
+
+            while IFS= read -r release; do
+              tag=$(jq --raw-output '.tag_name' <<< "$release")
+              if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Forgejo release tag must use the format vx.y.z: ${tag}" >&2
+                exit 1
+              fi
+
+              status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}")
+              case "$status" in
+                200) continue ;;
+                404) ;;
+                *)
+                  echo "failed to check GitHub release ${tag} (HTTP ${status})" >&2
+                  exit 1
+                  ;;
+              esac
+
+              jq --compact-output '{tag: .tag_name, title: (if (.name // "") == "" then .tag_name else .name end), notes: (.body // ""), prerelease: (.prerelease // false)}' <<< "$release" >> "$releases"
+            done < <(jq --compact-output '.[] | select(.draft | not)' "$response")
+            ((page++))
+          done
+
+          {
+            echo 'releases<<EOF'
+            jq --slurp --compact-output . "$releases"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish ${{ matrix.release.tag }}
+    needs: discover
+    if: needs.discover.outputs.releases != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.discover.outputs.releases) }}
+
+    steps:
+      - name: Check out Forgejo release source
+        id: source
+        env:
+          TAG: ${{ matrix.release.tag }}
+        run: |
+          git clone --depth 1 --branch "$TAG" "$FORGEJO_REPOSITORY_URL" source
+          echo "sha=$(git -C source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          rm -rf source/.git
+
+      - name: Verify GitHub tag
+        id: tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ matrix.release.tag }}
+          SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          response=$(mktemp)
+          status=$(curl --silent --output "$response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}")
+          case "$status" in
+            404)
+              echo 'exists=false' >> "$GITHUB_OUTPUT"
+              ;;
+            200)
+              existing_sha=$(jq --raw-output '.object.sha' "$response")
+              if [[ "$existing_sha" != "$SHA" ]]; then
+                echo "GitHub tag ${TAG} points to a different commit" >&2
+                exit 1
+              fi
+              echo 'exists=true' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "failed to check GitHub tag ${TAG} (HTTP ${status})" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          context: source
+          tags: ${{ env.GHCR_IMAGE }}:${{ matrix.release.tag }}
+          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:build-cache
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:build-cache,mode=max
+
+      - name: Create GitHub tag
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ matrix.release.tag }}
+          SHA: ${{ steps.source.outputs.sha }}
+        run: gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f "ref=refs/tags/${TAG}" -f "sha=${SHA}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ matrix.release.tag }}
+          TITLE: ${{ matrix.release.title }}
+          NOTES: ${{ matrix.release.notes }}
+          PRERELEASE: ${{ matrix.release.prerelease }}
+        run: |
+          arguments=(--repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "$NOTES")
+          if [[ "$PRERELEASE" == true ]]; then
+            arguments+=(--prerelease)
+          fi
+          gh release create "$TAG" "${arguments[@]}"
