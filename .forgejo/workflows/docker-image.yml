@@ -88,8 +88,94 @@ jobs:
           push: true
           context: .
           tags: ${{ env.IMAGE_REPOSITORY }}:${{ steps.image.outputs.tag }}
-          cache-from: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache
-          cache-to: type=registry,ref=${{ env.IMAGE_REPOSITORY }}:build-cache,mode=max
+
+      - name: Create README image-tag pull request
+        shell: bash
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$FORGEJO_TOKEN" | base64 -w 0)"
+          git_auth=(-c "http.${FORGEJO_SERVER_URL%/}/.extraheader=$auth_header")
+          repository_url="${FORGEJO_SERVER_URL%/}/${{ forgejo.repository }}.git"
+          api_url="${FORGEJO_SERVER_URL%/}/api/v1/repos/${{ forgejo.repository }}"
+          branch="docs/readme-image-${IMAGE_TAG}"
+
+          if git "${git_auth[@]}" ls-remote --exit-code --heads "$repository_url" "$branch" >/dev/null; then
+            git "${git_auth[@]}" clone --branch "$branch" --single-branch "$repository_url" tokai
+            cd tokai
+            IMAGE_TAG="$IMAGE_TAG" python - <<'PY'
+            import os
+            import re
+            from pathlib import Path
+
+            image = "ghcr.io/brennoflavio/tokai"
+            tags = re.findall(
+                rf"{re.escape(image)}:(v[0-9]+\.[0-9]+\.[0-9]+)",
+                Path("README.md").read_text(),
+            )
+            if tags != [os.environ["IMAGE_TAG"]]:
+                raise SystemExit(f"expected README image tag {os.environ['IMAGE_TAG']}, found {tags}")
+            PY
+          else
+            git "${git_auth[@]}" clone --branch master --single-branch "$repository_url" tokai
+            cd tokai
+            IMAGE_TAG="$IMAGE_TAG" python - <<'PY'
+            import os
+            import re
+            from pathlib import Path
+
+            readme = Path("README.md")
+            image = "ghcr.io/brennoflavio/tokai"
+            updated, matches = re.subn(
+                rf"{re.escape(image)}:v[0-9]+\.[0-9]+\.[0-9]+",
+                f"{image}:{os.environ['IMAGE_TAG']}",
+                readme.read_text(),
+            )
+            if matches != 1:
+                raise SystemExit(f"expected one README image tag, found {matches}")
+            readme.write_text(updated)
+            PY
+
+            git config user.name "Forgejo Actions"
+            git config user.email "actions@brennoflavio.com.br"
+            git add README.md
+            git commit -m "docs: update Docker image to ${IMAGE_TAG}"
+            git "${git_auth[@]}" push origin "HEAD:refs/heads/${branch}"
+          fi
+
+          pulls=$(curl --fail-with-body --silent --show-error \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            "${api_url}/pulls?state=open&base=master")
+          if PULLS="$pulls" BRANCH="$branch" python - <<'PY'; then
+          import json
+          import os
+          import sys
+
+          exists = any(pull["head"]["ref"] == os.environ["BRANCH"] for pull in json.loads(os.environ["PULLS"]))
+          sys.exit(0 if exists else 1)
+          PY
+            exit 0
+          fi
+
+          payload=$(BRANCH="$branch" python - <<'PY'
+          import json
+          import os
+
+          tag = os.environ["IMAGE_TAG"]
+          print(json.dumps({
+              "title": f"docs: update Docker image to {tag}",
+              "body": f"Updates the README Docker image tag to `{tag}`.",
+              "head": os.environ["BRANCH"],
+              "base": "master",
+          }))
+          PY
+          )
+          curl --fail-with-body --request POST \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "${api_url}/pulls"
 
       - name: Create release
         uses: https://code.forgejo.org/actions/forgejo-release@v2

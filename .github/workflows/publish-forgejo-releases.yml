@@ -142,8 +142,6 @@ jobs:
           push: true
           context: source
           tags: ${{ env.GHCR_IMAGE }}:${{ matrix.release.tag }}
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:build-cache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:build-cache,mode=max
 
       - name: Create GitHub tag
         if: steps.tag.outputs.exists == 'false'
