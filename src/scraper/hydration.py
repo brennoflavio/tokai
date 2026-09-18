@@ -64,6 +64,8 @@ def parse_hydration(html: str, expected_id: str) -> HydratedVideo | None:
         if any(item.get(flag) for flag in _RESTRICTION_FLAGS):
             raise ContentUnavailableError("TikTok marks this video as restricted")
         video = item["video"]
+        if item.get("isContentClassified") and not video.get("playAddr"):
+            raise ContentUnavailableError("TikTok marks this video as content classified")
         play_addr = video["playAddr"]
         parsed_address = urlsplit(play_addr)
         if (

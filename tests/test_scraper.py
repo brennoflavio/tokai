@@ -203,6 +203,7 @@ async def test_unsafe_redirect_is_rejected(location: str) -> None:
     [
         (hydration_html(id="999"), ContentUnavailableError),
         (hydration_html(privateItem=True), ContentUnavailableError),
+        (hydration_html(isContentClassified=True, video={"playAddr": None}), ContentUnavailableError),
         ("<html>no hydration</html>", ProtocolError),
         (
             '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">{not json}</script>',
