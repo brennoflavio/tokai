@@ -105,37 +105,37 @@ jobs:
             git "${git_auth[@]}" clone --branch "$branch" --single-branch "$repository_url" tokai
             cd tokai
             IMAGE_TAG="$IMAGE_TAG" python - <<'PY'
-            import os
-            import re
-            from pathlib import Path
+          import os
+          import re
+          from pathlib import Path
 
-            image = "ghcr.io/brennoflavio/tokai"
-            tags = re.findall(
-                rf"{re.escape(image)}:(v[0-9]+\.[0-9]+\.[0-9]+)",
-                Path("README.md").read_text(),
-            )
-            if tags != [os.environ["IMAGE_TAG"]]:
-                raise SystemExit(f"expected README image tag {os.environ['IMAGE_TAG']}, found {tags}")
-            PY
+          image = "ghcr.io/brennoflavio/tokai"
+          tags = re.findall(
+              rf"{re.escape(image)}:(v[0-9]+\.[0-9]+\.[0-9]+)",
+              Path("README.md").read_text(),
+          )
+          if tags != [os.environ["IMAGE_TAG"]]:
+              raise SystemExit(f"expected README image tag {os.environ['IMAGE_TAG']}, found {tags}")
+          PY
           else
             git "${git_auth[@]}" clone --branch master --single-branch "$repository_url" tokai
             cd tokai
             IMAGE_TAG="$IMAGE_TAG" python - <<'PY'
-            import os
-            import re
-            from pathlib import Path
+          import os
+          import re
+          from pathlib import Path
 
-            readme = Path("README.md")
-            image = "ghcr.io/brennoflavio/tokai"
-            updated, matches = re.subn(
-                rf"{re.escape(image)}:v[0-9]+\.[0-9]+\.[0-9]+",
-                f"{image}:{os.environ['IMAGE_TAG']}",
-                readme.read_text(),
-            )
-            if matches != 1:
-                raise SystemExit(f"expected one README image tag, found {matches}")
-            readme.write_text(updated)
-            PY
+          readme = Path("README.md")
+          image = "ghcr.io/brennoflavio/tokai"
+          updated, matches = re.subn(
+              rf"{re.escape(image)}:v[0-9]+\.[0-9]+\.[0-9]+",
+              f"{image}:{os.environ['IMAGE_TAG']}",
+              readme.read_text(),
+          )
+          if matches != 1:
+              raise SystemExit(f"expected one README image tag, found {matches}")
+          readme.write_text(updated)
+          PY
 
             git config user.name "Forgejo Actions"
             git config user.email "actions@brennoflavio.com.br"
