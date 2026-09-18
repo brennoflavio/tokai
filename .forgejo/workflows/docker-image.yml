@@ -21,12 +21,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: https://code.forgejo.org/actions/checkout@v4
+        uses: https://git.brennoflavio.com.br/ci-actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Set up uv
-        uses: https://github.com/astral-sh/setup-uv@v6
+        uses: https://git.brennoflavio.com.br/ci-actions/setup-uv@v6
 
       - name: Run tests
         run: uv run pytest
@@ -37,15 +37,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: https://code.forgejo.org/actions/checkout@v4
+        uses: https://git.brennoflavio.com.br/ci-actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Set up Buildx
-        uses: https://code.forgejo.org/docker/setup-buildx-action@v3
+        uses: https://git.brennoflavio.com.br/ci-actions/setup-buildx-action@v3
 
       - name: Log in to container registry
-        uses: https://code.forgejo.org/docker/login-action@v3
+        uses: https://git.brennoflavio.com.br/ci-actions/login-action@v3
         with:
           registry: ${{ env.REGISTRY_HOST }}
           username: ${{ secrets.REGISTRY_USERNAME }}
@@ -83,7 +83,7 @@ jobs:
           esac
 
       - name: Build and push container image
-        uses: https://code.forgejo.org/docker/build-push-action@v6
+        uses: https://git.brennoflavio.com.br/ci-actions/build-push-action@v6
         with:
           push: true
           context: .
@@ -178,7 +178,7 @@ jobs:
             "${api_url}/pulls"
 
       - name: Create release
-        uses: https://code.forgejo.org/actions/forgejo-release@v2
+        uses: https://git.brennoflavio.com.br/ci-actions/forgejo-release@v2
         with:
           direction: upload
           tag: ${{ steps.image.outputs.tag }}
@@ -198,7 +198,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: https://code.forgejo.org/actions/checkout@v4
+        uses: https://git.brennoflavio.com.br/ci-actions/checkout@v4
         with:
           persist-credentials: false
 
