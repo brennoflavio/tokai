@@ -29,7 +29,7 @@ docker run --detach \
      --env TOKAI_PORT=8000 \
      --env TOKAI_LOG_LEVEL=info \
      --env TOKAI_APP_URL=https://tokai.example.com \
-     ghcr.io/brennoflavio/tokai:v0.0.1
+     ghcr.io/brennoflavio/tokai:v0.0.2
 ```
 
 Replace the environment variable values with the ones that better suit your use case.
