@@ -17,6 +17,7 @@ ENV UV_CACHE_DIR=/tmp/uv-cache
 ENV TOKAI_HOST=0.0.0.0
 ENV TOKAI_PORT=8000
 ENV TOKAI_LOG_LEVEL=info
+ENV TOKAI_APP_URL=http://127.0.0.1:8000
 RUN useradd --uid 10001 --create-home --user-group tokai
 USER tokai
 

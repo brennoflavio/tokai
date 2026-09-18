@@ -35,3 +35,11 @@ class ScrapedVideo:
     byte_count: int
     md5: str
     file_hash_verified: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedVideo:
+    """Public metadata and an opaque handle for an in-memory media job."""
+
+    metadata: VideoMetadata
+    media_id: str

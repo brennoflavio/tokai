@@ -158,7 +158,8 @@ class TikTokScraper:
             )
             async with self._fetch_lock:
                 logger.debug("Acquired scraper fetch lock")
-                result = await self._fetch_identifier(parsed)
+                hydrated = await self._prepare_identifier(parsed)
+                result = await self._download_media(hydrated)
         except ScraperError as exc:
             logger.debug("Scraper fetch failed error_type=%s error=%s", type(exc).__name__, exc)
             raise
@@ -173,7 +174,27 @@ class TikTokScraper:
         )
         return result
 
-    async def _fetch_identifier(self, identifier: Identifier) -> ScrapedVideo:
+    async def prepare_video(self, identifier: str) -> HydratedVideo:
+        """Retrieve and validate page metadata without downloading its media."""
+        try:
+            parsed = parse_identifier(identifier)
+            logger.debug(
+                "Started scraper preparation identifier=%s identifier_kind=%s",
+                parsed.value,
+                "video_id" if parsed.is_video_id else "short_code",
+            )
+            async with self._fetch_lock:
+                return await self._prepare_identifier(parsed)
+        except ScraperError as exc:
+            logger.debug("Scraper preparation failed error_type=%s error=%s", type(exc).__name__, exc)
+            raise
+
+    async def download_prepared(self, hydrated: HydratedVideo) -> ScrapedVideo:
+        """Download a video previously returned by :meth:`prepare_video`."""
+        async with self._fetch_lock:
+            return await self._download_media(hydrated)
+
+    async def _prepare_identifier(self, identifier: Identifier) -> HydratedVideo:
         expected_id = identifier.value if identifier.is_video_id else None
         page_url, html = await self._get_page(identifier.initial_url, expected_id)
         expected_id = video_id_from_page_url(page_url)
@@ -184,7 +205,7 @@ class TikTokScraper:
             hydrated = parse_hydration(html, expected_id)
             if hydrated is not None:
                 logger.debug("Validated TikTok hydration video_id=%s", hydrated.metadata.video_id)
-                return await self._download_media(hydrated)
+                return hydrated
             if attempt == 0 and 'data-source="downgrade-mssdk-preload"' in html:
                 logger.debug("Retrying TikTok hydration after app-shell response delay_seconds=1")
                 await asyncio.sleep(1)

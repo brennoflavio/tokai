@@ -165,9 +165,18 @@ h1 {
   padding-block: 3rem 5rem;
 }
 
-.video-page h1 {
-  margin: 0.65rem 0 1.5rem;
-  font-size: clamp(2rem, 7vw, 3.5rem);
+.video-author {
+  margin: 0.9rem 0 0;
+}
+
+.video-author--last {
+  margin-bottom: 1.25rem;
+}
+
+.video-created {
+  margin: 0.25rem 0 1.25rem;
+  color: #657063;
+  font-size: 0.9rem;
 }
 
 .back-link {
@@ -189,6 +198,38 @@ video {
   display: block;
   width: 100%;
   max-height: 75vh;
+}
+
+.video-stats {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 1rem 0 0;
+  color: #657063;
+}
+
+.video-stats span + span::before {
+  margin-inline: 0.6rem;
+  content: "·";
+}
+
+.video-stats strong {
+  color: #20251f;
+}
+
+.video-links {
+  margin: 1rem 0 0;
+}
+
+.video-links a {
+  color: #3f724e;
+  font-weight: 700;
+  text-underline-offset: 0.2em;
+}
+
+.video-caption {
+  margin: 1rem 0 0;
+  color: #526051;
+  line-height: 1.55;
 }
 
 .visually-hidden {

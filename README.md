@@ -28,6 +28,7 @@ docker run --detach \
      --env TOKAI_HOST=0.0.0.0 \
      --env TOKAI_PORT=8000 \
      --env TOKAI_LOG_LEVEL=info \
+     --env TOKAI_APP_URL=https://tokai.example.com \
      ghcr.io/brennoflavio/tokai:v0.0.1
 ```
 

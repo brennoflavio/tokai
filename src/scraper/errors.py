@@ -30,3 +30,11 @@ class MediaTooLargeError(ScraperError):
 
 class MediaIntegrityError(ScraperError):
     """The MP4 failed container, length, size, or checksum validation."""
+
+
+class MediaJobNotFoundError(ScraperError):
+    """The requested in-memory media job has expired or does not exist."""
+
+
+class JobCapacityError(ScraperError):
+    """The in-memory media job registry has reached a configured limit."""

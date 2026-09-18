@@ -5,24 +5,31 @@ from .client import TikTokScraper, fetch_video
 from .errors import (
     ContentUnavailableError,
     InvalidIdentifierError,
+    JobCapacityError,
     MediaIntegrityError,
+    MediaJobNotFoundError,
     MediaTooLargeError,
     ProtocolError,
     ScraperError,
     TransportError,
 )
-from .models import ScrapedVideo, VideoMetadata
+from .jobs import VideoDownloadJobs
+from .models import PreparedVideo, ScrapedVideo, VideoMetadata
 
 __all__ = [
     "ContentUnavailableError",
     "InvalidIdentifierError",
+    "JobCapacityError",
     "MediaIntegrityError",
+    "MediaJobNotFoundError",
     "MediaTooLargeError",
+    "PreparedVideo",
     "ProtocolError",
     "ScrapedVideo",
     "ScraperError",
     "TikTokScraper",
     "TransportError",
+    "VideoDownloadJobs",
     "VideoMetadata",
     "fetch_video",
 ]

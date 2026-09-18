@@ -12,6 +12,7 @@ from .app import app
 def main() -> None:
     """Configure logging and start the Tokai web server."""
     log_level = get_required_env(Environment.TOKAI_LOG_LEVEL)
+    get_required_env(Environment.TOKAI_APP_URL)
     configure_logging(log_level)
     uvicorn.run(
         app,

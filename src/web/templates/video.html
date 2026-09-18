@@ -1,17 +1,39 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 {% extends "base.html" %}
 
-{% block title %}TokAI — Video{% endblock %}
+{% block title %}TokAI - Video{% endblock %}
 
 {% block content %}
-<section class="video-page" aria-labelledby="video-title">
+<section class="video-page" aria-label="TikTok video">
   <a class="back-link" href="/">Home</a>
-  <h1 id="video-title">Title</h1>
+  {% if metadata.author_display_name or metadata.author_handle %}
+  <p class="video-author{% if not metadata.created_at %} video-author--last{% endif %}">{% if metadata.author_display_name %}{{ metadata.author_display_name }}{% endif %}{% if metadata.author_handle %} · @{{ metadata.author_handle }}{% endif %}</p>
+  {% endif %}
+  {% if metadata.created_at %}
+  <p class="video-created">Published {{ metadata.created_at.strftime("%d %b %Y") }}</p>
+  {% endif %}
   <div class="video-frame">
     <video controls>
       <source src="{{ media_url }}" type="video/mp4">
       Your browser does not support MP4 video playback.
     </video>
   </div>
+  {% if metadata.digg_count is not none or metadata.play_count is not none or metadata.share_count is not none %}
+  <p class="video-stats">
+    {% if metadata.digg_count is not none %}
+    <span>Likes <strong>{{ metadata.digg_count | compact_count }}</strong></span>
+    {% endif %}
+    {% if metadata.play_count is not none %}
+    <span>Views <strong>{{ metadata.play_count | compact_count }}</strong></span>
+    {% endif %}
+    {% if metadata.share_count is not none %}
+    <span>Shares <strong>{{ metadata.share_count | compact_count }}</strong></span>
+    {% endif %}
+  </p>
+  {% endif %}
+  <p class="video-links"><a href="{{ permalink }}">Permalink</a> · <a href="{{ tiktok_url }}">TikTok</a> · <a href="{{ download_url }}">Download</a></p>
+  {% if metadata.caption %}
+  <p class="video-caption">{{ metadata.caption }}</p>
+  {% endif %}
 </section>
 {% endblock %}
