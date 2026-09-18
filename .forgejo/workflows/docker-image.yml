@@ -242,6 +242,7 @@ jobs:
     env:
       VPS_USER: tokai
       VPS_DEPLOY_PATH: /home/tokai/tokai
+      TOKAI_APP_URL: https://tokai.brennoflavio.com.br
 
     steps:
       - name: Checkout code
@@ -313,7 +314,7 @@ jobs:
           )
           ssh "${ssh_options[@]}" "$VPS_USER@$VPS_HOST" \
             "cd '$VPS_DEPLOY_PATH' &&
-             docker compose up -d --build --remove-orphans &&
+             TOKAI_APP_URL='$TOKAI_APP_URL' docker compose up -d --build --remove-orphans &&
              for attempt in \$(seq 1 30); do
                if docker compose exec -T tokai python -c \"from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null; then
                  exit 0
