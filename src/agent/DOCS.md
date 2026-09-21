@@ -4,7 +4,7 @@
 
 ## Result and scope
 
-[`example.py`](example.py) implements **full or short URL → public video document → metadata → signed media request → verified MP4** using only Python's standard library. All **nine exact URLs in [`src/agent/PROMPT.md`](src/agent/PROMPT.md) passed two fresh-session end-to-end runs** on 2026-09-21 UTC. They identify five distinct videos.
+[`example.py`](example.py) implements **full or short URL → public video document → metadata → signed media request → verified MP4** using only Python's standard library. All **nine exact URLs in [`PROMPT.md`](PROMPT.md) passed two fresh-session end-to-end runs** on 2026-09-21 UTC. They identify five distinct videos.
 
 The essential finding is that **the server-rendered document already contains signed media URLs**. Preserve the chosen URL and retain the page-issued **`tt_chain_token` cookie plus `Referer: https://www.tiktok.com/`** for its media request. No browser, JavaScript runtime, imported browser state, credentials, third-party extractor, or signing service is needed by the script.
 
@@ -12,7 +12,7 @@ This documents the observed public-video playback chain, not a recovered impleme
 
 ## Run and reuse
 
-The two deliverables live at the **repository root**, as required by `src/agent/PROMPT.md`; there are no duplicate copies under `src/agent`. The standalone example requires Python 3.10+; both current live runs used Python 3.14.7. It needs no third-party packages. The extraction algorithm remains unchanged: frontend asset versions and build variants changed, but the hydration/media chain still works.
+The two deliverables remain in `src/agent`, their original working directory. The standalone example requires Python 3.10+; both current live runs used Python 3.14.7. It needs no third-party packages. The extraction algorithm remains unchanged: frontend asset versions and build variants changed, but the hydration/media chain still works.
 
 For the **Tokai application**, use the repository's Python 3.14 and locked dependencies (including the development test group). With `uv` installed; validated with uv 0.12.6:
 
@@ -26,7 +26,7 @@ uv run --no-sync python -m web.main
 The server defaults to `http://127.0.0.1:8000`, with `TOKAI_LOG_LEVEL=info` and `TOKAI_APP_URL=http://127.0.0.1:8000`. Override `TOKAI_HOST`, `TOKAI_PORT`, and `TOKAI_LOG_LEVEL` as needed; set `TOKAI_APP_URL` to the public base URL for correct permalinks, especially behind a proxy. No credentials or `.env` file are required. The browser and FFmpeg are investigation/validation tools, not application or example runtime dependencies.
 
 ```sh
-# From the repository root:
+# From `src/agent`:
 
 python3 example.py 'https://vm.tiktok.com/ZMAYuMpFQ/' \
   --output-dir /tmp/tiktok-video
@@ -43,7 +43,7 @@ Use a new output directory for each run. Normal extraction creates `<output-dir>
 
 Quote URLs containing `&`. Multiple positional URLs are supported; positional URLs and `--test` are mutually exclusive. Successful extractions print one JSON record with ID, author, description, duration, dimensions, codec, path, HTTP request count, byte count, MD5, and `file_hash_verified`. Failures go to stderr and make the final exit code nonzero; later inputs are still attempted. Signed URLs and cookie values are not printed.
 
-From Python, with the repository root on the import path:
+From Python, with `src/agent` on the import path:
 
 ```python
 from example import extract
@@ -270,7 +270,7 @@ The response streams to a temporary file before validation and exclusive creatio
 
 ## 5. Live validation results
 
-Both runs used Python 3.14.7 from the repository's uv-created `.venv` on 2026-09-21 UTC. Every case used a fresh Extractor/cookie jar, fetched fresh metadata, and downloaded the entire MP4. Case order is exactly `src/agent/PROMPT.md` order. Request counts include all redirects; neither run needed shell retries.
+Both runs used Python 3.14.7 from the repository's uv-created `.venv` on 2026-09-21 UTC. Every case used a fresh Extractor/cookie jar, fetched fresh metadata, and downloaded the entire MP4. Case order is exactly `PROMPT.md` order. Request counts include all redirects; neither run needed shell retries.
 
 | Case | Input | Video ID | Bytes | Run 1 GETs | Run 2 GETs | Result |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -308,7 +308,7 @@ Validation performed:
 
 Research captures, the offline test harness, and downloaded videos were kept outside the repository in `/tmp/tokai-audit-20260921`. They are temporary local artifacts, not required dependencies or committed fixtures. No cookie values or signed media URLs are committed.
 
-Reproduce live media checks from the repository root (FFmpeg is optional validation tooling, not a script dependency):
+Reproduce live media checks from `src/agent` (FFmpeg is optional validation tooling, not a script dependency):
 
 ```sh
 python3 example.py --test --output-dir /tmp/tiktok-new-run

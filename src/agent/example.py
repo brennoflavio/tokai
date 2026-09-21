@@ -241,7 +241,7 @@ def extract(url, output_dir="."):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("urls", nargs="*", help="Public TikTok video URLs or vm.tiktok.com short links")
-    parser.add_argument("--test", action="store_true", help="Download and verify all nine src/agent/PROMPT.md URLs in separate case directories")
+    parser.add_argument("--test", action="store_true", help="Download and verify all nine PROMPT.md URLs in separate case directories")
     parser.add_argument("--output-dir", type=Path, default=Path("."), help="Destination directory (default: current directory)")
     args = parser.parse_args()
     if bool(args.urls) == args.test:
