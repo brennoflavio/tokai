@@ -4,7 +4,7 @@
 
 ## Result and scope
 
-`example.py` implements **full or short URL → public video document → metadata → signed media request → verified MP4** using only Python's standard library. All **nine exact URLs in `PROMPT.md` passed two fresh-session end-to-end runs** on 2026-09-14 UTC. They identify five distinct videos.
+[`example.py`](example.py) implements **full or short URL → public video document → metadata → signed media request → verified MP4** using only Python's standard library. All **nine exact URLs in [`src/agent/PROMPT.md`](src/agent/PROMPT.md) passed two fresh-session end-to-end runs** on 2026-09-21 UTC. They identify five distinct videos.
 
 The essential finding is that **the server-rendered document already contains signed media URLs**. Preserve the chosen URL and retain the page-issued **`tt_chain_token` cookie plus `Referer: https://www.tiktok.com/`** for its media request. No browser, JavaScript runtime, imported browser state, credentials, third-party extractor, or signing service is needed by the script.
 
@@ -12,7 +12,7 @@ This documents the observed public-video playback chain, not a recovered impleme
 
 ## Run and reuse
 
-The two deliverables live in `src/agent`, the requested working directory. The standalone example requires Python 3.10+; both current live runs used Python 3.14.7. It needs no third-party packages. The extraction chain remains valid without changes to `example.py`.
+The two deliverables live at the **repository root**, as required by `src/agent/PROMPT.md`; there are no duplicate copies under `src/agent`. The standalone example requires Python 3.10+; both current live runs used Python 3.14.7. It needs no third-party packages. The extraction algorithm remains unchanged: frontend asset versions and build variants changed, but the hydration/media chain still works.
 
 For the **Tokai application**, use the repository's Python 3.14 and locked dependencies (including the development test group). With `uv` installed; validated with uv 0.12.6:
 
@@ -23,10 +23,10 @@ uv run --no-sync pytest -q
 uv run --no-sync python -m web.main
 ```
 
-The server defaults to `http://127.0.0.1:8000`, with `TOKAI_LOG_LEVEL=info`. Override `TOKAI_HOST`, `TOKAI_PORT`, and `TOKAI_LOG_LEVEL` in the environment if needed; no credentials or `.env` file are required. The browser and FFmpeg are investigation/validation tools, not application or example runtime dependencies.
+The server defaults to `http://127.0.0.1:8000`, with `TOKAI_LOG_LEVEL=info` and `TOKAI_APP_URL=http://127.0.0.1:8000`. Override `TOKAI_HOST`, `TOKAI_PORT`, and `TOKAI_LOG_LEVEL` as needed; set `TOKAI_APP_URL` to the public base URL for correct permalinks, especially behind a proxy. No credentials or `.env` file are required. The browser and FFmpeg are investigation/validation tools, not application or example runtime dependencies.
 
 ```sh
-cd src/agent
+# From the repository root:
 
 python3 example.py 'https://vm.tiktok.com/ZMAYuMpFQ/' \
   --output-dir /tmp/tiktok-video
@@ -43,7 +43,7 @@ Use a new output directory for each run. Normal extraction creates `<output-dir>
 
 Quote URLs containing `&`. Multiple positional URLs are supported; positional URLs and `--test` are mutually exclusive. Successful extractions print one JSON record with ID, author, description, duration, dimensions, codec, path, HTTP request count, byte count, MD5, and `file_hash_verified`. Failures go to stderr and make the final exit code nonzero; later inputs are still attempted. Signed URLs and cookie values are not printed.
 
-From Python, with `src/agent` on the import path:
+From Python, with the repository root on the import path:
 
 ```python
 from example import extract
@@ -56,35 +56,38 @@ print(result["path"])  # Local MP4, playable in ffplay, VLC, etc.
 
 ## 1. Browser investigation and frontend source
 
-Investigated on **2026-09-14 UTC**, using an isolated, logged-out Playwright Chromium session with the skill's stealth configuration. The page reported region `BR`. Browser investigation and plain Python requests used the same machine/network; no browser cookies were exported to the implementation.
+Investigated on **2026-09-21 UTC**, using isolated, logged-out Playwright Chromium sessions with the skill's stealth configuration (Chrome/152 user agent). The page reported region `BR`. Browser investigation and plain Python requests used the same machine/network; no browser cookies were exported to the implementation. The script's existing Chrome/146 user agent still worked; matching the installed browser version was not necessary for this route.
 
 Observed for `https://vm.tiktok.com/ZMAYuMpFQ/`:
 
 1. The browser reached video `7542076400346451232` and displayed the actual caption and author. Its address ultimately contained `@nerublanco`, while the plain HTTP redirect target had an empty handle (`/@/video/...`). The script does not need the browser's later address normalization.
 2. `__UNIVERSAL_DATA_FOR_REHYDRATION__` contained `webapp.video-detail.statusCode == 0` and the complete video object.
-3. The video was actively playing: `readyState == 4`, `paused == false`, and `currentTime` advanced. Its `currentSrc` was a `blob:` URL, not a remotely fetchable media address.
-4. Initial captured media requests returned `200`, `Content-Type: video/mp4`, with a full content length and no Range header. Matching their URLs against the document's `bitrateInfo` identified **H.264 `lower_540_0`, 697,930 bits/s, 4,466,758 bytes**, not the default `playAddr` (7,515,994 bytes). A later request sent `Range: bytes=4143469-` and received `206`, `Content-Range: bytes 4143469-4466757/4466758`, and 323,289 bytes. The browser can request partial media too; this does not establish its precise seeking/adaptation algorithm. Browser quality selection must not be conflated with the script's fixed default-rendition choice.
-5. Recommendation, login, analytics, subtitle, and security traffic continued separately. A login UI later changed the document title to “Log in | TikTok” while the video was still playing; a title alone does not establish playback failure.
-6. The browser loaded the two security bundles below and contacted `mssdk-sg.tiktok.com/web/resource` and `/web/report`. These requests are omitted from the verified Python chain.
+3. The video was actively playing: `readyState == 4`, `paused == false`, and `currentTime` advanced from 10.867 to 12.874 seconds over a two-second observation. Its `currentSrc` was a `blob:` URL, not a remotely fetchable media address.
+4. Two captured video-CDN requests returned `200`, `Content-Type: video/mp4`, with a full content length and no Range header. Matching their URLs against the document's `bitrateInfo` identified **H.264 `lower_540_0`, 697,930 bits/s, 4,466,758 bytes**, not the default `playAddr` (7,515,994 bytes). A separate 197,971-byte MP4 from the static-asset host returned `206` for `Range: bytes=0-`, but did **not** match this video's rendition metadata: not every MP4 on the page is the requested video. These observations do not establish the player's precise seeking/adaptation algorithm. Browser quality selection must not be conflated with the script's fixed default-rendition choice.
+5. Recommendation, login, and security activity continued separately. The title was “Log in | TikTok” while the video was still playing; a title alone does not establish playback failure.
+6. The browser loaded the two security bundles below and a response was captured from `mssdk-sg.tiktok.com/web/resource`. This traffic is omitted from the verified Python chain.
 
 ### Source inspected afresh
 
-The desktop asset base was:
+Two desktop build variants were served during this audit, not one universal bundle set:
 
 ```text
 https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/tiktok/webapp/main/react-v18/webapp-desktop/static/js/
+https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/tiktok/webapp/main/player-split/webapp-desktop/static/js/
 ```
 
-Offsets below are zero-based character offsets in the freshly fetched, decoded JavaScript, not stable API locations.
+The first navigation used `react-v18`; a later navigation in the isolated browser used `player-split`. Do not hardcode asset names or assume that a reload returns the same build. Offsets below are zero-based character offsets in freshly fetched, decoded JavaScript, not stable API locations.
 
 | Asset | Relevant evidence |
 | --- | --- |
-| `webapp-desktop.2e529377.js` | Hydration marker at offset 244104: reads `document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__").textContent`, parses JSON, and looks up the requested key under `__DEFAULT_SCOPE__`. |
-| `player.init.b4c53adc.js` | Near 196850, consumes `playAddr`, bitrate, size, format, codec, duration, `bitrateInfo`, audio variants, and optional `PlayAddrStruct`. Uses `i=H?G(H):{url:p}`: an address struct if present, otherwise the default play address. Builds a rendition list from that metadata. |
-| `player.init.b4c53adc.js` | Near 226259, checks MediaSource/WebKitMediaSource and availability of `isTypeSupported`, recognizes blob URLs, and contains an expiry classifier for `expire`, `x-tos-expires`, `x-expires`, or a hexadecimal path component. It compares parsed expiry to current UTC time; this does not reveal the server signature algorithm. |
-| `biz.common.lib.f35e4b90.js` | At 256750, uses `MediaSource.isTypeSupported` for HEVC codec strings. Playback is capability-dependent. |
-| `webmssdk/1.0.0.417/webmssdk.js` | Under `/obj/tiktok_web_login_static/`, not the desktop base. At 26281–26619, exposes state names including `bogusIndex`, `WEBGL`, `envcode`, `msToken`, `fetchSignTime`, and `XHRSignTime`, followed by extended-proof state. The algorithmic implementation is obfuscated. |
-| `ttweb_webmssdk_ex/1.0.0.2858/webmssdk_ex.js` | Extended obfuscated security bundle, also under `/obj/tiktok_web_login_static/`. The same state names and extended-proof fields are visible near 55212–55500. |
+| `react-v18/.../webapp-desktop.adbedbe8.js` | Hydration marker at 245939: reads the hydration script's `textContent`, parses JSON, and looks up a key under `__DEFAULT_SCOPE__`. |
+| `player-split/.../webapp-desktop.59d49441.js` | Same hydration pattern; marker at 246521. |
+| `react-v18/.../player.init.dbfd1e1a.js` | `PlayAddrStruct` at 196975, alongside default `playAddr`, bitrate, size, format, codec, duration, `bitrateInfo`, and audio variants. Builds rendition metadata from these inputs. |
+| `player-split/.../player.init.6dbad970.js` | Same metadata inputs; `PlayAddrStruct` at 101146. The initial bundle is 131,712 bytes versus 227,625 bytes for the observed `react-v18` player; this alone does not imply less total player code. |
+| Both player bundles | MediaSource/WebKitMediaSource checks at 226295 / 130382; `x-tos-expires` at 226596 / 130683 (`react-v18` / `player-split`). Recognize blob URLs and classify expiry using `expire`, `x-tos-expires`, `x-expires`, or a hexadecimal path component, comparing to UTC time. This does not reveal the server signature algorithm. |
+| `biz.common.lib.66503841.js` (both bases) | At 257305, uses `MediaSource.isTypeSupported` with HEVC codec strings. Playback is capability-dependent. The fetched copies were byte-identical. |
+| `webmssdk/1.0.0.417/webmssdk.js` | Under `/obj/tiktok_web_login_static/`, not either desktop base. At 26281–26619, exposes state names including `bogusIndex`, `WEBGL`, `envcode`, `msToken`, `fetchSignTime`, and `XHRSignTime`, followed by extended-proof state. The algorithmic implementation is obfuscated. |
+| `ttweb_webmssdk_ex/1.0.0.2873/webmssdk_ex.js` | Extended obfuscated security bundle, also under `/obj/tiktok_web_login_static/`. The same state names and extended-proof fields are visible near 64026–64330. |
 
 These observations do not recover the whole media engine, its precise SourceBuffer append/range logic, or adaptive-quality decision algorithm. The Python implementation downloads a complete default MP4 instead of reproducing in-browser rendering, adaptation, or seeking.
 
@@ -212,16 +215,16 @@ Some rendition metadata also offers a `www.tiktok.com/aweme/v1/play/` URL with f
 
 ### Browser API signatures — observed, not required
 
-Captured `/api/related/item_list/` requests included desktop context such as `aid=1988`, `device_platform=web_pc`, browser/language/region fields, device/session identifiers, and:
+A captured `/api/related/item_list/` request returned HTTP 200 and included these security query fields (HTTP 200 alone does not establish its response contents):
 
 | Field | Observation |
 | --- | --- |
-| `X-Dynosaur` | Long varying query value. |
-| `msToken` | Security/session query value; absent from an initial captured request and present in a later one. |
-| `X-Bogus` | Literal `1` in captured related-item requests; not an assumed historical signature format. |
-| `X-Gnarly` | Long varying query value. |
+| `X-Dynosaur` | Present; opaque value, not generated by the example. |
+| `msToken` | Present as a security/session query value. |
+| `X-Bogus` | Literal `1`; not an assumed historical signature format. |
+| `X-Gnarly` | Present; opaque value, not generated by the example. |
 
-The SDK bundles, environment/signing state names, resource requests, and report traffic establish an active security subsystem. They do **not** establish a recovered algorithm or identical checks across all endpoints. The Python script does not call these APIs, replay their signatures, invent device IDs, or reproduce browser fingerprints. Initial-video metadata is already in hydration; its media URL uses a separate server-issued signature/cookie chain.
+The SDK bundles, environment/signing state names, and resource request establish an active security subsystem. They do **not** establish a recovered algorithm or identical checks across all endpoints. The Python script does not call these APIs, replay their signatures, invent device IDs, or reproduce browser fingerprints. Initial-video metadata is already in hydration; its media URL uses a separate server-issued signature/cookie chain.
 
 ### Controlled media experiments
 
@@ -267,7 +270,7 @@ The response streams to a temporary file before validation and exclusive creatio
 
 ## 5. Live validation results
 
-Both runs used Python 3.14.7 from the repository's uv-created `.venv` on 2026-09-14 UTC. Every case used a fresh Extractor/cookie jar, fetched fresh metadata, and downloaded the entire MP4. Case order is exactly `PROMPT.md` order. Request counts include all redirects; neither run needed shell retries.
+Both runs used Python 3.14.7 from the repository's uv-created `.venv` on 2026-09-21 UTC. Every case used a fresh Extractor/cookie jar, fetched fresh metadata, and downloaded the entire MP4. Case order is exactly `src/agent/PROMPT.md` order. Request counts include all redirects; neither run needed shell retries.
 
 | Case | Input | Video ID | Bytes | Run 1 GETs | Run 2 GETs | Result |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -296,16 +299,16 @@ These hashes are evidence, not hardcoded expectations: future legitimate transco
 Validation performed:
 
 - Compilation with `py_compile`; CLI help, missing arguments, mutually exclusive inputs, and unsupported-URL checks.
-- 16 temporary offline unittest cases for `example.py`: the exact nine-URL list, URL validation, no duplicate page GET, empty handles, ID mismatches, bounded final-page-only shell recovery, availability/schema checks, signature preservation, media integrity, no overwrite, and independent test destinations/error continuation. These use mocked responses; actual redirects/cookies were exercised by the live runs and controls.
-- All **58 repository pytest tests passed**, covering the application, scraper, environment, and URL helpers. Two upstream dependency deprecation warnings were emitted; no failures.
+- **30 temporary offline pytest cases** for `example.py`: the exact nine-URL list, URL validation, no duplicate page GET, empty handles, ID mismatches, bounded final-page-only shell recovery, availability/schema checks, signature preservation, media integrity, no overwrite, and independent test destinations/error continuation. These use mocked responses; actual redirects/cookies were exercised by the live runs and controls.
+- All **85 repository pytest tests passed**, covering the application, scraper, jobs, environment, and URL helpers. Two upstream dependency deprecation warnings were emitted; no failures.
 - Both complete live `--test` runs above, plus the seven controlled media variants in section 3.
-- Actual Tokai server smoke test: homepage, video page, and `/media/7542076400346451232` all returned HTTP 200. The served MP4 was byte-identical to the standalone example's download.
+- Actual Tokai server smoke test with an isolated loopback port: homepage, `/ZMAYuMpFQ/`, and the **rendered** `/media/<media_id>` and `/download/<media_id>` links all returned HTTP 200. Both served MP4s were byte-identical to the standalone example's download; the attachment filename was `7542076400346451232.mp4`. Media IDs now identify in-memory jobs, not the numeric video ID: parse the returned page instead of constructing `/media/<video-id>`. The smoke-test process was stopped afterward.
 - `ffprobe` 5.1.9 on all nine Run 1 files: H.264/AAC, 576 × 1024. Reported container durations for cases 01–05 were 68.367000, 22.434000, 12.634000, 73.067000, and 51.200000 seconds; short-link copies matched.
 - Full `ffmpeg -xerror` audio/video decoding of **all nine Run 1 files**: exit 0, empty stderr.
 
-Research captures, the offline test harness, and downloaded videos were kept outside the repository in `/tmp/tokai-audit-research`, preserving the two-file deliverable. They are temporary local artifacts, not required dependencies or committed fixtures.
+Research captures, the offline test harness, and downloaded videos were kept outside the repository in `/tmp/tokai-audit-20260921`. They are temporary local artifacts, not required dependencies or committed fixtures. No cookie values or signed media URLs are committed.
 
-Reproduce live media checks from `src/agent` (FFmpeg is optional validation tooling, not a script dependency):
+Reproduce live media checks from the repository root (FFmpeg is optional validation tooling, not a script dependency):
 
 ```sh
 python3 example.py --test --output-dir /tmp/tiktok-new-run
