@@ -6,13 +6,13 @@ You are an Engineer with the task of reverse engineer Tiktok frontend website, w
 
 You'll understand how the signature and checks are performaed in the browser, document them, and reproduce in a pyhton script, outside browser context.
 
-Your output will be two files, in this repo root:
+Your output will be two files, in `src/agent`, alongside `PROMPT.md`:
 
-- DOCS.md -> Full documentation of how the frontend works for video play. The checks performed, important requests, siganture and checks, etc.
-- example.py -> A self contained pyhton script that performs an end to end video extraction, implementing the reverse engineered patterns you documented.
+- `DOCS.md` -> Full documentation of how the frontend works for video play. The checks performed, important requests, siganture and checks, etc.
+- `example.py` -> A self contained pyhton script that performs an end to end video extraction, implementing the reverse engineered patterns you documented.
 
 Check if the files exist. If so, means that you already did this task in the past. It might be incomplete as Tiktok changes its API often, redo the task and
-update the files with the latest discovery. Delete old / outdated files, no need to keep a revision history.
+update the files with the latest discovery. Only replace outdated `src/agent/DOCS.md` and `src/agent/example.py`; do not delete, move, or relocate files outside those intended paths.
 
 To be able to do this, you have full access to a Playwright environment in this computer, check the skill to learn how to operate it
 
