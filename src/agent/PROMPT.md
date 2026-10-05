@@ -2,21 +2,29 @@
 
 # Reverse Engineer task
 
-You are an Engineer with the task of reverse engineer Tiktok frontend website, with the goal of creating a reusable mehtod of playing a video without a browser environment.
+You are an Engineer with the task of reverse engineer Tiktok frontend website, with the goal of creating a reusable mehtod of playing videos and opening profiles without a browser environment.
 
-You'll understand how the signature and checks are performaed in the browser, document them, and reproduce in a pyhton script, outside browser context.
+You'll understand how the signature and checks are performaed in the browser, document them, and reproduce in a pyhton scripts, outside browser context.
 
-Your output will be two files, in `src/agent`, alongside `PROMPT.md`:
+For videos, the final goal is to extract medatada and be able to play the video
 
-- `DOCS.md` -> Full documentation of how the frontend works for video play. The checks performed, important requests, siganture and checks, etc.
-- `example.py` -> A self contained pyhton script that performs an end to end video extraction, implementing the reverse engineered patterns you documented.
+For profiles, the final goal is to extract metadata and a list of videos that is passable to the video extraction pipeline
+
+Your output will be three files, in `src/agent`, alongside `PROMPT.md`:
+
+- `DOCS.md` -> Full documentation of how the frontend works for video play and profile open. The checks performed, important requests, siganture and checks, etc.
+- `example-video.py` -> A self contained pyhton script that performs an end to end video extraction, implementing the reverse engineered patterns you documented.
+- `example-profile.py` -> A self contained pyhton script that performs an end to end profile extraction, implementing the reverse engineered patterns you documented.
 
 Check if the files exist. If so, means that you already did this task in the past. It might be incomplete as Tiktok changes its API often, redo the task and
-update the files with the latest discovery. Only replace outdated `src/agent/DOCS.md` and `src/agent/example.py`; do not delete, move, or relocate files outside those intended paths.
+update the files with the latest discovery. Only replace outdated `src/agent/DOCS.md`, `src/agent/example-video.py` and `src/agent/example-profile.py`; do not delete, move, or relocate files outside
+those intended paths.
 
 To be able to do this, you have full access to a Playwright environment in this computer, check the skill to learn how to operate it
 
 Test your implementation against the following TikTok urls:
+
+## Video URLs
 - https://www.tiktok.com/@casamentosemdividas/video/7286599702303362310?share_item_id=7286599702303362310&share_app_id=1233
 - https://www.tiktok.com/@causanobrecerimonial/video/7502602409370307845?share_app_id=1233&share_item_id=7502602409370307845
 - https://www.tiktok.com/@metropolesoficial/video/7562939840271076615?share_item_id=7562939840271076615&share_app_id=1233
@@ -27,9 +35,16 @@ Test your implementation against the following TikTok urls:
 - https://vm.tiktok.com/ZMA4ncut8/
 - https://vm.tiktok.com/ZMAVwmojg/
 
+# Profile URLs
+https://www.tiktok.com/@casamentosemdividas
+https://www.tiktok.com/@causanobrecerimonial
+https://www.tiktok.com/@metropolesoficial
+https://www.tiktok.com/@nerublanco
+
 ## Requeriments
 - Make sure your implementation passes against all test urls
 - Document / implement the full chain from URL to video
+- Document / implement the full chain from URL to profile
 - Don't include more requests than necessary
 
 Last note: You're in a headless environment, so getting back to the user is not possible. Do all of it by yourself

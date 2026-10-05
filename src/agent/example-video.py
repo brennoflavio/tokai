@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Download public TikTok videos using only Python's standard library.
 
+Accepts the video_urls emitted by example-profile.py as ordinary URL inputs.
 See DOCS.md for the observed request chain, its checks, and limitations.
 """
 

@@ -1,315 +1,353 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# TikTok public-video playback without a browser
+# TikTok public video and profile extraction without a browser
 
-## Result and scope
+## Status — 2026-10-05 UTC
 
-[`example.py`](example.py) implements **full or short URL → public video document → metadata → signed media request → verified MP4** using only Python's standard library. All **nine exact URLs in [`PROMPT.md`](PROMPT.md) passed two fresh-session end-to-end runs** on 2026-09-28 UTC. They identify five distinct videos.
+**Video extraction is verified. Profile extraction is incomplete against the requested live test set.** Do not read the existence of the profile script as an all-tests-pass claim.
 
-The essential finding is that **the server-rendered document already contains signed media URLs**. Preserve the chosen URL and retain the page-issued **`tt_chain_token` cookie plus `Referer: https://www.tiktok.com/`** for its media request. No browser, JavaScript runtime, imported browser state, credentials, third-party extractor, or signing service is needed by the script.
+| Deliverable | Implemented and observed | Remaining limitation |
+| --- | --- | --- |
+| [`example-video.py`](example-video.py) | Full/short URL → fresh public document → metadata → cookie-bound signed media URL → verified MP4. **9/9 exact video URLs passed.** | Public MP4 posts only; no browser/API signer required on this route. |
+| [`example-profile.py`](example-profile.py) | Profile document → account metadata; creator-embed document → a **partial video preview** when available; canonical video URLs feed the video script. | All four profiles returned metadata, but all four final preview requests returned HTTP 503. **0/4 complete profile tests passed.** No working desktop API signer or pagination implementation was recovered. |
 
-This documents the observed public-video playback chain, not a recovered implementation of TikTok's entire obfuscated anti-bot SDK. Server signing keys, signature formulas, and exact token bindings remain unknown. Obtaining a fresh signed URL and its cookies from the public document makes those algorithms unnecessary for this route.
+One earlier, live `metropolesoficial` creator-embed response contained ten videos. Its captured schema passes the parser, and its first video was subsequently downloaded and fully decoded through `example-video.py`. This is evidence for the preview route and the interface between the scripts, **not** a successful final four-profile run. An earlier `casamentosemdividas` embed response had an empty `videoList` despite a positive post count; the script deliberately rejects that as an unverified listing.
 
-## Run and reuse
+The requirement in [`PROMPT.md`](PROMPT.md) to pass **all** supplied URLs therefore remains unmet. Desktop post-list signing/security checks, stable preview availability, and a complete profile archive are unresolved. No CAPTCHA solver, imported browser cookies, third-party scraper, signing service, hardcoded video list, or silent success on empty/denied responses is used.
 
-The two deliverables remain in `src/agent`, their original working directory. The standalone example requires Python 3.10+; both current live runs used Python 3.14.7. It needs no third-party packages. The extraction algorithm remains unchanged: frontend asset versions changed, but the hydration/media chain still works.
+## Running the standalone examples
 
-For the **Tokai application**, use the repository's Python 3.14 and locked dependencies (including the development test group). With `uv` installed; validated with uv 0.12.6:
-
-```sh
-# From the repository root; uv downloads Python 3.14 if needed:
-uv sync --frozen --all-groups
-uv run --no-sync pytest -q
-uv run --no-sync python -m web.main
-```
-
-The server defaults to `http://127.0.0.1:8000`, with `TOKAI_LOG_LEVEL=info` and `TOKAI_APP_URL=http://127.0.0.1:8000`. Override `TOKAI_HOST`, `TOKAI_PORT`, and `TOKAI_LOG_LEVEL` as needed; set `TOKAI_APP_URL` to the public base URL for correct permalinks, especially behind a proxy. No credentials or `.env` file are required. The browser and FFmpeg are investigation/validation tools, not application or example runtime dependencies.
+Both scripts use only Python's standard library, Python 3.10+. This audit ran them with Python 3.14.4. Browser tools and FFmpeg were investigation/validation tools, not runtime dependencies.
 
 ```sh
-# From `src/agent`:
+# From the repository root; quote URLs containing '&'.
+python src/agent/example-video.py 'https://vm.tiktok.com/ZMAYuMpFQ/' \
+  --output-dir /tmp/my-tiktok-video
 
-python3 example.py 'https://vm.tiktok.com/ZMAYuMpFQ/' \
-  --output-dir /tmp/tiktok-video
+python src/agent/example-video.py --test \
+  --output-dir /tmp/my-tiktok-video-tests
 
-# Independently download and verify every exact PROMPT.md URL:
-python3 example.py --test --output-dir /tmp/tiktok-regression
+python src/agent/example-profile.py 'https://www.tiktok.com/@metropolesoficial'
 
-# Use the repository's Python version without building its package:
-uv run --no-project --python 3.14 example.py --test \
-  --output-dir /tmp/tiktok-regression-314
+# Tests every profile independently, continuing after errors.
+# This exited 1 in the final audit: metadata succeeded, previews were denied.
+python src/agent/example-profile.py --test
 ```
 
-Use a new output directory for each run. Normal extraction creates `<output-dir>/<video-id>.mp4` and refuses to overwrite existing files. `--test` creates `case-01/` through `case-09/` beneath the output directory: short links duplicate four full URLs, so each case needs its own destination to test the entire chain independently, without caching or skipping downloads.
+Video extraction refuses to overwrite `<output-dir>/<video-id>.mp4`. Use a fresh directory. `--test` uses independent `case-01` through `case-09` directories so full and short links to the same post each exercise the complete chain. Each case has a new cookie jar. Successful results are JSON lines on stdout; any failure makes the exit code nonzero.
 
-Quote URLs containing `&`. Multiple positional URLs are supported; positional URLs and `--test` are mutually exclusive. Successful extractions print one JSON record with ID, author, description, duration, dimensions, codec, path, HTTP request count, byte count, MD5, and `file_hash_verified`. Failures go to stderr and make the final exit code nonzero; later inputs are still attempted. Signed URLs and cookie values are not printed.
+The profile script prints JSON only for successful metadata-plus-list results. On a listing failure, stderr contains an error record with `profile_metadata` when already retrieved; stdout does **not** present this as a successful empty list. Callers must check the exit code. HTTP 403/429/503 and empty previews are not automatically retried. Respect any rate limit and defer another attempt; repeated requests are not a reliable cure for an unavailable upstream service.
 
-From Python, with `src/agent` on the import path:
+### Reuse and profile → video interface
+
+The requested filenames contain hyphens, so use `runpy` or `importlib`, not `from example-profile import ...`:
 
 ```python
-from example import extract
+import runpy
 
-result = extract("https://vm.tiktok.com/ZMAYuMpFQ/", "/tmp/my-video")
-print(result["path"])  # Local MP4, playable in ffplay, VLC, etc.
+profile_api = runpy.run_path("src/agent/example-profile.py")
+video_api = runpy.run_path("src/agent/example-video.py")
+
+# Raises ExtractionError if the listing cannot be verified.
+profile = profile_api["extract"]("https://www.tiktok.com/@metropolesoficial")
+print(profile["nickname"], profile["statistics"])
+print(profile["listing"])  # complete is deliberately False
+
+for url in profile["video_urls"][:1]:
+    result = video_api["extract"](url, "/tmp/profile-video")
+    print(result["path"])  # Play this local MP4 in VLC, ffplay, etc.
 ```
 
-`Extractor.resolve(url)` returns `itemStruct`; `Extractor.download(item, Path(...))` downloads the media. **Use the same Extractor instance for both** so the cookie jar survives. `extract()` does this automatically with a fresh session for each input. `video_id(url)` validates supported input URLs and returns the numeric path ID, or `None` for an unresolved short link.
+`video.Extractor.resolve(url)` returns the raw `itemStruct`; `download(item, Path(...))` retrieves its MP4. Use the **same Extractor instance** for both. The convenience `extract()` manages this automatically. Profile results expose `videos` (ID, canonical URL, description, play count), `video_urls`, account metadata, `listing`, and the actual request count. They do not expose embed media URLs as durable playback links. A newly fetched video document, with its own fresh cookies and media URL, is the authoritative availability check.
 
-## 1. Browser investigation and frontend source
+## 1. Investigation environment and source evidence
 
-Investigated on **2026-09-28 UTC**, using an isolated, logged-out Playwright Chromium session with the skill's stealth configuration (Chrome/153 user agent). The page reported region `BR`. Browser investigation and plain Python requests used the same machine/network; no browser cookies were exported to the implementation. The script's existing Chrome/146 user agent still worked; matching the installed browser version was not necessary for this route.
+Investigation used the skill's `playwright-safe` wrapper attached to the **shared** CDP Chromium browser. A dedicated tab was created, closed, and the CLI session detached afterward. A named session is not an isolated browser profile. No browser cookies/storage were exported, reset, or used by the Python implementations. The TikTok UI showed a login prompt and reported region `BR`; this does not establish an isolated/fresh browser identity.
 
-Observed for `https://vm.tiktok.com/ZMAYuMpFQ/`:
+The public `nerublanco` test video actively played: `readyState=4`, `paused=false`, and `currentTime` advanced from 3.836794 to 5.836825 seconds over two seconds. `currentSrc` was a `blob:` URL, not a directly fetchable media address. The page title was “Log in | TikTok” during playback: a title alone is not a playback test.
 
-1. The browser reached video `7542076400346451232` and displayed the actual caption and author. Its address ultimately contained `@nerublanco`, while the plain HTTP redirect target had an empty handle (`/@/video/...`). The script does not need the browser's later address normalization.
-2. `__UNIVERSAL_DATA_FOR_REHYDRATION__` contained `webapp.video-detail.statusCode == 0` and the complete video object.
-3. The video was actively playing: `readyState == 4`, `paused == false`, and `currentTime` advanced from 10.028 to 12.036 seconds over a two-second observation. Its `currentSrc` was a `blob:` URL, not a remotely fetchable media address.
-4. Two captured video-CDN requests returned `200`, `Content-Type: video/mp4`, with a full content length and no Range header. Matching their URLs against the document's `bitrateInfo` identified **H.264 `lower_540_0`, 697,930 bits/s, 4,466,758 bytes**, not the default `playAddr` (7,515,994 bytes). A separate 197,971-byte MP4 from the static-asset host returned `206` for `Range: bytes=0-`, but did **not** match this video's rendition metadata: not every MP4 on the page is the requested video. These observations do not establish the player's precise seeking/adaptation algorithm. Browser quality selection must not be conflated with the script's fixed default-rendition choice.
-5. Recommendation, login, and security activity continued separately. The title was “Log in | TikTok” while the video was still playing; a title alone does not establish playback failure.
-6. The browser loaded the two security bundles below; HTTP 200 responses were captured from `mssdk-sg.tiktok.com/web/resource` and `/web/report`. This traffic is omitted from the verified Python chain.
+Opening the `casamentosemdividas` and `nerublanco` desktop profiles produced a slider CAPTCHA and no video links. Waiting and one reload of the first profile did not resolve it. No CAPTCHA interaction was attempted. Browser requests to `/api/post/item_list/` contained `msToken`, `X-Dynosaur`, `X-Bogus`, and `X-Gnarly`; the captured post-list response body was empty. HTTP 200 alone is not a valid JSON/list result.
 
-### Source inspected afresh
+### Bundles inspected afresh
 
-The captured browser document used the `react-v18` desktop build:
+The desktop assets were under:
 
 ```text
-https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/tiktok/webapp/main/react-v18/webapp-desktop/static/js/
+https://sf16-website-login.neutral.ttwstatic.com/obj/tiktok_web_login_static/
+  tiktok/webapp/main/react-v18/webapp-desktop/
 ```
 
-The 2026-09-21 audit also observed a `player-split` build; that variant was not revalidated in this capture. Do not hardcode asset names or assume that a reload returns the same build. Offsets below are zero-based character offsets in freshly fetched, decoded JavaScript, not stable API locations.
+Paths below are relative to that desktop base unless stated otherwise. Offsets are zero-based character offsets in the downloaded, decoded JavaScript, not stable API contracts.
 
-| Asset | Relevant evidence |
+| Asset | Evidence |
 | --- | --- |
-| `webapp-desktop.815f179f.js` | Hydration marker at 246163: reads the hydration script's `textContent`, parses JSON, and looks up a key under `__DEFAULT_SCOPE__`. |
-| `player.init.16cea91e.js` | `PlayAddrStruct` at 196975, alongside default `playAddr`, bitrate, size, format, codec, duration, `bitrateInfo`, and audio variants. Builds rendition metadata from these inputs. |
-| Same player bundle | MediaSource/WebKitMediaSource checks starting at 226256; `x-tos-expires` at 226596. Recognizes blob URLs and classifies expiry using `expire`, `x-tos-expires`, `x-expires`, or a hexadecimal path component, comparing to UTC time. This does not reveal the server signature algorithm. |
-| `biz.common.lib.cf3b0e0c.js` | At 257376, uses `MediaSource.isTypeSupported` with HEVC codec strings. Playback is capability-dependent. |
-| `webmssdk/1.0.0.417/webmssdk.js` | Under `/obj/tiktok_web_login_static/`, not the desktop base. At 26281–26619, exposes state names including `bogusIndex`, `WEBGL`, `envcode`, `msToken`, `fetchSignTime`, and `XHRSignTime`, followed by extended-proof state. The algorithmic implementation is obfuscated. |
-| `ttweb_webmssdk_ex/1.0.0.2888/webmssdk_ex.js` | Extended obfuscated security bundle, also under `/obj/tiktok_web_login_static/`. The same state names are visible at 122609–122795, followed by extended-proof fields. |
+| `static/js/webapp-desktop.815f179f.js` | Hydration marker at 246163; parses script `textContent` as JSON and reads `__DEFAULT_SCOPE__`. |
+| `user-prefetch.e4a973fd.js` | At 103385, builds the post-list query from profile `secUid`, `aid:1988`, `count` (16 or 24 in this prefetch branch), `cursor:"0"`, language, cover format, and video encoding; requests `/api/post/item_list/`. Also requests `/api/user/playlist/` independently. |
+| `static/js/async/user.4af5a065.js` | Reads `detailInfo.user.secUid` and invokes the item-list loader. Profile metadata and the post feed are distinct data paths. |
+| `static/js/player.init.16cea91e.js` | `PlayAddrStruct` at 196975; builds rendition data from `playAddr`, size, format, codec and `bitrateInfo`. MediaSource checks at 226256; `x-tos-expires` at 226596. Recognizes expiry fields `expire`, `x-tos-expires`, `x-expires`, and a hexadecimal path component. |
+| `webmssdk/1.0.0.417/webmssdk.js` (static root) | Obfuscated browser security bundle. No complete signature algorithm was recovered. |
+| `ttweb_webmssdk_ex/1.0.0.2901/webmssdk_ex.js` (static root) | Current extended bundle loaded by the browser; visible state names include `bogusIndex` (157364), `WEBGL` (157442), `msToken` (157461), `fetchSignTime` (157534), and `XHRSignTime` (157550). These names do not establish an algorithm. |
+| `embed/static/tiktok-embed.module.1f1ab0fbe45bcde2a3be.js` (static root) | Creator handler uses `/embed/api/profile/getUserInfo` (2196658) and `/embed/api/profile/getItemList` (2196810). At 2196962, sets `const b=10,m="/embed/@"`; stores `userInfo` and `videoList` in Frontity state at 2198772. |
+| `embed/static/playlistCard.module.7b78dcaf255541a4659d.js` (static root) | Renders creator metadata and maps preview entries into canonical author/video links. It does not provide evidence for complete archive pagination. |
 
-These observations do not recover the whole media engine, its precise SourceBuffer append/range logic, or adaptive-quality decision algorithm. The Python implementation downloads a complete default MP4 instead of reproducing in-browser rendering, adaptation, or seeking.
+The embed document referenced older `webmssdk/1.0.0.223/webmssdk.js`; it is a separate frontend build, not proof that the desktop SDK can be omitted for desktop API calls. Asset names and A/B variants can change; neither script hardcodes or downloads these bundles.
 
-## 2. Minimal request chain, including short links
+## 2. Video: minimal end-to-end request chain
 
 ```text
-Input full video URL                         Input vm.tiktok.com/<code>/
-         │                                              │
-         │                                      GET short URL → HTTP 302
-         │                                              │ Location
-         └─────────────────────┬────────────────────────┘
-                               ▼
-                GET /@handle/video/<id>?share_...
-                (handle may be empty: /@/video/<id>)
-                  ├─ retain Set-Cookie in CookieJar
-                  └─ parse hydration from THIS response
-                               │
-                local availability / identity / format checks
-                               │
-                GET unchanged video.playAddr, same cookie jar
-                  Referer: https://www.tiktok.com/
-                               │
-                complete MP4 → size/container/hash checks → file
+Full /@handle/video/<id> URL                  vm.tiktok.com/<code>/
+            │                                        │
+            │                              GET → HTTP 302 Location
+            └───────────────────┬────────────────────┘
+                                ▼
+                    GET the public video document
+                    retain domain-scoped Set-Cookie
+                    parse hydration from THIS response
+                                │
+                    identity/availability/format checks
+                                │
+                    GET unchanged video.playAddr
+                    same cookie jar + TikTok Referer
+                                │
+                    size/container/hash checks → MP4
 ```
 
-**Normally two GETs for full URLs, three for the tested short URLs.** There is no homepage warmup, HEAD, oEmbed call, item-detail API, signature endpoint, canonical-page refetch, alternate-quality probe, or preliminary range request.
+**Two GETs per full URL, three per tested short URL.** No homepage warmup, HEAD, oEmbed, item-detail API, security report, signature service, quality probe, or preliminary range request is needed. The redirected response already contains the document; do not fetch its final URL again.
 
-### Short-link resolution
+### Short links and identity
 
-The accepted short-link form is `https://vm.tiktok.com/<alphanumeric-code>/` (final slash optional). The four supplied links each returned a **302** to an HTTPS video document on `www.tiktok.com`:
-
-| Short code | Redirect path | Hydrated author |
+| Short URL | Resolved video ID | Hydrated author |
 | --- | --- | --- |
-| `ZMAYuMpFQ` | `/@/video/7542076400346451232` | `nerublanco` |
-| `ZMAj83k4w` | `/@/video/7544010904229252358` | `metropolesoficial` |
-| `ZMA4ncut8` | `/@/video/7562939840271076615` | `metropolesoficial` |
-| `ZMAVwmojg` | `/@/video/7286599702303362310` | `casamentosemdividas` |
+| `https://vm.tiktok.com/ZMAYuMpFQ/` | 7542076400346451232 | nerublanco |
+| `https://vm.tiktok.com/ZMAj83k4w/` | 7544010904229252358 | metropolesoficial |
+| `https://vm.tiktok.com/ZMA4ncut8/` | 7562939840271076615 | metropolesoficial |
+| `https://vm.tiktok.com/ZMAVwmojg/` | 7286599702303362310 | casamentosemdividas |
 
-The inspected Location query included `_d`, `_r`, `share_app_id`, `share_item_id`, `timestamp`, `u_code`, `utm_campaign`, and `utm_source`. It is followed as supplied, not synthesized from the short code. There is no hardcoded mapping in the extractor.
+`urllib` follows Location and retains cookies automatically. Empty handles in `/@/video/<id>` redirects are valid. The path ID, not `share_item_id`, is authoritative. The final URL must identify a supported video; full input URLs must preserve their ID through redirects. There is no short-code lookup table in the implementation.
 
-`urllib` follows redirects and retains cookies automatically. **The final response already is the video page**: parse it, do not fetch its URL a second time. The final URL must be a supported full TikTok video URL, and its path ID must match hydration. For a full input URL, redirects must also preserve the original video ID. Never use `share_item_id` as the authoritative ID or require a nonempty username to identify the video.
+The page request uses a Chrome/146 Linux user agent, `Accept: text/html`, and `Accept-Language: en-US,en;q=0.9`. Queries are retained, including share parameters. Supported inputs are HTTPS `tiktok.com`/`www.tiktok.com` video URLs and `vm.tiktok.com` alphanumeric short links, not arbitrary hosts, live streams, or photo posts.
 
-### Video-document request
-
-```http
-GET /@handle/video/<id>?share_... HTTP/1.1
-Host: www.tiktok.com
-User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
-Accept: text/html
-Accept-Language: en-US,en;q=0.9
-```
-
-The same headers are used for short-link resolution. Full input URLs may use `www.tiktok.com` or `tiktok.com`, HTTPS, and `/@handle/video/<numeric-id>`; an empty handle is accepted for share redirects. Queries are preserved. Photo posts, feeds, live streams, other short-link hosts, and non-video destinations are outside this interface.
-
-A successful document contains:
+### Hydration and checks
 
 ```text
-__UNIVERSAL_DATA_FOR_REHYDRATION__
-└── __DEFAULT_SCOPE__
-    └── webapp.video-detail
-        ├── statusCode: 0
-        └── itemInfo.itemStruct
-            ├── id / author / desc
-            ├── privateItem / secret / forFriend / isProhibited / takeDown
-            └── video
-                ├── playAddr / downloadAddr
-                ├── size / duration / width / height / codecType / format
-                └── bitrateInfo[]
-                    ├── CodecType / Bitrate / Format / GearName
-                    └── PlayAddr
-                        ├── UrlList[]
-                        ├── DataSize
-                        └── FileHash
+<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">
+  __DEFAULT_SCOPE__
+    webapp.video-detail
+      statusCode
+      itemInfo.itemStruct
+        id / author / desc / createTime / stats
+        privateItem / secret / forFriend / isProhibited / takeDown
+        video
+          playAddr / downloadAddr / format / size / duration
+          width / height / codecType
+          bitrateInfo[].PlayAddr
+            UrlList[] / DataSize / FileHash
 ```
 
-The parser treats the script text as JSON, not executable JavaScript. JSON decoding handles escaped slashes and `\u002F`/`\u0026`; do not HTML-unescape it again or decode/re-encode the signed query. HTTP 200 is insufficient: require `statusCode == 0`, matching IDs, no active restriction flags listed above, an HTTPS play address, and MP4 format. These flag checks are conservative local checks; the server status and metadata remain authoritative.
+Parse JSON, never execute it. JSON decoding handles `\u002F`/`\u0026`; do not additionally HTML-unescape or rebuild the signed URL. Require status zero, matching ID, no active restriction flags above, an HTTPS play address, and MP4 format. These are conservative local checks, not a reconstruction of all server-side moderation/authorization rules.
 
-### Conditional HTTP-200 app-shell recovery
+A hydration-free HTTP-200 document containing exactly `data-source="downgrade-mssdk-preload"` gets **one** delayed retry (one second), using the already resolved page URL and existing cookies. No current video test needed it; offline tests cover this branch. Repeated shells, arbitrary challenges, unavailable items, or HTTP failures are errors, not reasons to loop or switch to another service. Actual redirects/retries are included in request counts.
 
-The implementation recognizes a hydration-free app shell by this exact marker:
+## 3. Media cookies, signatures, and integrity
 
-```html
-data-source="downgrade-mssdk-preload"
-```
+### Server-issued playback capability
 
-The implementation waits one second and retries **only that document once**, in the same session, if hydration is absent and this marker exists. For a short input, it retries the **resolved video URL**, not the short link. This avoids paying for the same redirect again.
-
-No such shell occurred in either current live run, so recovery was not demonstrated live in this audit. Offline tests verify the bounded retry and final-page-only behavior. Repeated shells, arbitrary challenges, HTTP errors, and unavailable items are not retried. No CAPTCHA/WAF solver or signed-API/browser fallback is implemented.
-
-Both live runs used exactly **2 GETs per full URL and 3 per short URL**. A recognized-shell retry adds one GET, yielding **2–3 for a full URL, 3–4 for a short URL** with the observed redirect topology. Additional real redirects, if TikTok introduces them, also count. `RequestCounter` counts actual requests, including redirects and the bounded retry.
-
-## 3. Cookies, signatures, and checks
-
-### Page-issued cookie chain
-
-| Cookie | Evidence-supported role |
-| --- | --- |
-| `tt_chain_token` | HttpOnly, scoped to `.tiktok.com`; required for the tested media URL. An HTTP cookie jar can use it even though page JavaScript cannot read it. |
-| `ttwid` | Visitor/session state; not needed in the chain-cookie-only media control. |
-| `tt_csrf_token` | Page-issued CSRF state; not needed for this read-only chain. |
-| `msToken` | Security/session state, also seen in browser API queries; not needed for the tested media GET with chain cookie and Referer. |
-
-The returned media query contains `tk=tt_chain_token`: this is the **cookie name**, not its value. Leave it untouched. `CookieJar` sends domain/path/secure-matching cookies to the CDN; do not copy browser cookies into a global Cookie header or insert token values into the URL. Tokens and media URLs are obtained together for each extraction, without importing another session.
-
-### Server-issued media signature — used
-
-A redacted, nonfunctional URL shape:
+The media URL is already signed in raw HTML, before any page JavaScript executes. A redacted, nonfunctional shape is:
 
 ```text
 https://v16-webapp-prime.tiktok.com/video/tos/<region>/<object>/
 ?a=1988&bti=<opaque>&&bt=<rate>&ft=<opaque>&mime_type=video_mp4
-&rc=<opaque>&expire=<unix-seconds>&l=<request-context>
-&ply_type=2&policy=2&signature=<32-hex-value>&tk=tt_chain_token&btag=<opaque>
+&rc=<opaque>&expire=<epoch>&l=<context>&ply_type=2&policy=2
+&signature=<32-hex>&tk=tt_chain_token&btag=<opaque>
 ```
 
-The URL and `signature` appear in raw HTTP HTML before JavaScript executes. The client obtains this freshly signed media capability; it does not calculate one.
+Preserve host, path, query ordering, values, and even repeated separators. `tk=tt_chain_token` names a cookie; it is **not** the cookie's value. Keep the page-issued HttpOnly `.tiktok.com` cookie in a `CookieJar`, so normal domain/path/secure matching attaches it to the appropriate media host. Do not put browser cookies into a global Cookie header.
 
-- Preserve the host, path, complete query, ordering, repeated separators, and parameter values. The script does not reconstruct the URL.
-- `expire` is an epoch-looking expiry. The player has expiry-classification code, but no fixed lifetime should be assumed. Obtain fresh metadata instead of storing media URLs as permanent identifiers.
-- A 32-hex `signature` does **not** establish MD5, HMAC, which fields are signed, or the signing secret.
-- Replacing the signature produced 403. Setting `expire=1` also produced 403, which does not distinguish expiry rejection from signed-field tampering.
-- Exact session/IP/path binding and server validation internals remain unknown.
-
-Some rendition metadata also offers a `www.tiktok.com/aweme/v1/play/` URL with fields such as `file_id`, `video_id`, `item_id`, `pt`, and `signaturev3`. It is an alternative address, not a required preliminary endpoint. The example uses the supplied default CDN URL, not a synthesized play endpoint.
-
-### Browser API signatures — observed, not required
-
-A captured `/api/related/item_list/` request returned HTTP 200 and included these security query fields (HTTP 200 alone does not establish its response contents):
-
-| Field | Observation |
+| Cookie | Evidence-supported role |
 | --- | --- |
-| `X-Dynosaur` | Present; opaque value, not generated by the example. |
-| `msToken` | Present as a security/session query value. |
-| `X-Bogus` | Literal `1`; not an assumed historical signature format. |
-| `X-Gnarly` | Present; opaque value, not generated by the example. |
+| `tt_chain_token` | Required for the tested media request; the chain-cookie-only control succeeds. |
+| `ttwid` | Visitor state. Not necessary in the chain-only media control. |
+| `tt_csrf_token` | Page-issued CSRF state. Not necessary for that read-only media request. |
+| `msToken` | Browser security/session state, also used in API queries. Not necessary for that media GET. |
 
-The SDK bundles, environment/signing state names, and resource request establish an active security subsystem. They do **not** establish a recovered algorithm or identical checks across all endpoints. The Python script does not call these APIs, replay their signatures, invent device IDs, or reproduce browser fingerprints. Initial-video metadata is already in hydration; its media URL uses a separate server-issued signature/cookie chain.
+A 32-hex signature does not prove MD5, HMAC, the signed fields, or the server key. Its generation algorithm and exact IP/session bindings remain unknown. Fetch fresh metadata rather than storing media URLs as permanent identifiers. `expire` resembles an epoch expiry and the player classifies expirations, but changing it also invalidates potentially signed data; this experiment cannot distinguish those rejection causes.
 
-### Controlled media experiments
+Some rendition lists include alternative `/aweme/v1/play/` addresses with `signaturev3`. These are not prerequisite endpoints. The script chooses the supplied default `video.playAddr`, not a synthesized alternative, arbitrary MP4-looking request, `downloadAddr`, thumbnail, subtitle, or blob URL.
 
-Repeated during this investigation using fresh Python metadata for `7544010904229252358`. Each probe requested `Range: bytes=0-1023` solely to reduce research traffic; the extraction script does not perform these probes.
+### Controlled experiments, repeated 2026-10-05
+
+Fresh Python metadata for video `7544010904229252358` was used. Research probes alone used `Range: bytes=0-1023`; the actual extractor does not probe first.
 
 | Variation | Result |
 | --- | --- |
-| All page cookies + Chrome UA + TikTok Referer + unchanged URL | `206`, `video/mp4`, 1,024 bytes, MP4 `ftyp` |
-| Only `tt_chain_token`, same UA/Referer/URL | Same successful `206` |
-| Other cookies without `tt_chain_token` | `403` |
-| Chain cookie and UA without Referer | `403` |
-| Page cookies and Referer, Python urllib UA for media only | Successful `206` |
-| Signature replaced with zeros | `403` |
-| `expire` replaced with `1` | `403` |
+| Page cookies + Chrome UA + TikTok Referer + untouched URL | 206, video/mp4, 1,024 bytes, MP4 `ftyp` |
+| Only `tt_chain_token`, same UA/Referer | Same success |
+| Other cookies, no `tt_chain_token` | 403 |
+| Page cookies, no Referer | 403 |
+| Python urllib UA for media, page cookies and Referer | Same success |
+| Signature replaced with zeros | 403 |
+| `expire` replaced with `1` | 403 |
 
-These show necessary conditions for the tested combination, not universal policy across every region or future CDN version. The document request still uses the Chrome-like UA; the default-UA control concerns only media.
+These establish conditions for this tested URL/session, not a universal CDN policy. The default-UA experiment concerns **media**, not the page request.
 
-## 4. Media retrieval and integrity
+### Complete media retrieval
 
-The script selects **`video.playAddr`**, not an arbitrary MP4-looking string or the first bitrate entry. All five tested defaults were MP4/H.264, with muxed AAC audio, 576 × 1024. Browser adaptation can select another rendition, as observed above; highest-quality or browser-identical selection is not claimed.
+The extractor sends one GET with `Accept: */*`, `Referer: https://www.tiktok.com/`, the unchanged signed URL, and its cookie jar. It does not need Origin, Sec-Fetch headers, client hints, a CORS preflight, or JavaScript. `urllib` requests identity encoding by default. CORS is a browser restriction, not a requirement to emulate OPTIONS in Python.
 
-`bitrateInfo` supplies alternative addresses and integrity metadata. Matching the chosen URL exactly against `PlayAddr.UrlList` yields its `DataSize` and `FileHash`, without extra requests. `downloadAddr` is a distinct asset; it is not needed for playback and its name alone does not prove a watermark policy. Covers and subtitles are not media candidates.
+The response must be a complete HTTP 200 `video/mp4`. Download into a temporary file, checking:
 
-```http
-GET /video/tos/<exact-path>/?<unchanged-signed-query> HTTP/1.1
-Host: v16-webapp-prime.tiktok.com
-User-Agent: <same as the document request>
-Accept: */*
-Referer: https://www.tiktok.com/
-Cookie: <automatically domain-scoped page cookies>
-```
+1. Initial MP4 `ftyp` box, not an HTML denial.
+2. Actual size versus Content-Length and metadata size when present.
+3. MD5 versus the matching rendition's `FileHash` when supplied. Locate the rendition by **exactly matching** the chosen URL against `PlayAddr.UrlList` and use its `DataSize`.
+4. Exclusive creation of the destination only after validation.
 
-No Range header or OPTIONS preflight is sent. The captured CDN responses advertised byte ranges and browser CORS headers (`Access-Control-Allow-Origin: https://www.tiktok.com`, credentials support). CORS is enforced by browsers, not a requirement to emulate preflights in Python. The working requests require no Origin, client hints, or Sec-Fetch headers.
+MD5 checks integrity, not authenticity or the URL signature. Validation is not a codec decoder; FFmpeg separately decoded the live outputs. Final copying is not crash-atomic: an I/O failure during publication can leave a partial destination. Existing files are never overwritten and such failures are not reported as success.
 
-Validation before publishing a file:
+## 4. Profiles: desktop metadata versus the video list
 
-1. Complete HTTP `200`, not `206`, and `Content-Type: video/mp4`.
-2. MP4 `ftyp` at the beginning, not an HTML denial under an MP4 filename.
-3. Actual byte count matches Content-Length and fresh metadata size when present.
-4. MD5 matches the chosen rendition's `FileHash` when present. This matched every live extraction. MD5 here checks integrity, not authenticity or the media URL signature.
-
-The response streams to a temporary file before validation and exclusive creation of the destination. Existing files are preserved. Transfer/validation failures do not publish that temporary media. Final copying is **not crash-atomic**: a disk/write failure during publication can leave a partial destination; an errored extraction is never success. These checks are not a codec decoder; full decoding was separately validated below.
-
-## 5. Live validation results
-
-Both runs used Python 3.14.7 from the repository's uv-created `.venv` on 2026-09-28 UTC. Every case used a fresh Extractor/cookie jar, fetched fresh metadata, and downloaded the entire MP4. Case order is exactly `PROMPT.md` order. Request counts include all redirects; neither run needed shell retries.
-
-| Case | Input | Video ID | Bytes | Run 1 GETs | Run 2 GETs | Result |
-| --- | --- | --- | --- | --- | --- | --- |
-| 01 | Full, `casamentosemdividas` | 7286599702303362310 | 1,686,277 | 2 | 2 | PASS |
-| 02 | Full, `causanobrecerimonial` | 7502602409370307845 | 3,370,911 | 2 | 2 | PASS |
-| 03 | Full, `metropolesoficial` | 7562939840271076615 | 3,559,532 | 2 | 2 | PASS |
-| 04 | Full, `metropolesoficial` | 7544010904229252358 | 6,475,232 | 2 | 2 | PASS |
-| 05 | Full, `nerublanco` | 7542076400346451232 | 7,515,994 | 2 | 2 | PASS |
-| 06 | `vm.tiktok.com/ZMAYuMpFQ/` | 7542076400346451232 | 7,515,994 | 3 | 3 | PASS |
-| 07 | `vm.tiktok.com/ZMAj83k4w/` | 7544010904229252358 | 6,475,232 | 3 | 3 | PASS |
-| 08 | `vm.tiktok.com/ZMA4ncut8/` | 7562939840271076615 | 3,559,532 | 3 | 3 | PASS |
-| 09 | `vm.tiktok.com/ZMAVwmojg/` | 7286599702303362310 | 1,686,277 | 3 | 3 | PASS |
-
-All copies of each video, including full/short inputs, matched these hashes and the **fresh server FileHash**:
+### Desktop profile document — working
 
 ```text
-7286599702303362310  0ec4ec2f47fb8c1ab4ed2fa729c7f918
-7502602409370307845  6f72036ef200462416acf8bf95aa80d7
-7562939840271076615  99d152615736924bbeb3950460235fe2
-7544010904229252358  ddf05108de1ddbfee96113ac9ec48120
-7542076400346451232  186c3d2051d39111c4d8775030bd7641
+GET https://www.tiktok.com/@<handle>
+  __UNIVERSAL_DATA_FOR_REHYDRATION__
+    __DEFAULT_SCOPE__.webapp.user-detail
+      statusCode / statusMsg
+      userInfo
+        user: id, uniqueId, secUid, nickname, signature, createTime,
+              verified, privateAccount, secret, avatar*, profileTab, ...
+        stats / statsV2
+        itemList: []
 ```
 
-These hashes are evidence, not hardcoded expectations: future legitimate transcodes can change them.
+The account `signature` field here is **biography text**, not a cryptographic signature. `secUid` is a public opaque account identifier used by the desktop post-list endpoint. `statsV2` contained decimal-string counters; the script prefers these over the rounded legacy `stats` and converts them to integers.
 
-Validation performed:
+The script validates the requested handle, numeric account ID, status zero, nonnegative counts, and privacy flags. It keeps account metadata without printing session cookies or signed avatar/media URLs. Allowed redirects stay on the requested TikTok profile/embed paths, not external hosts or other accounts. The same recognized-shell-only retry as the video example is supported for the desktop document.
 
-- Compilation with `py_compile`; CLI help, missing arguments, mutually exclusive inputs, and unsupported-URL checks.
-- **34 temporary offline pytest cases** for `example.py`: the exact nine-URL list, URL validation, no duplicate page GET, empty handles, ID mismatches, bounded final-page-only shell recovery, availability/schema checks, signature preservation, media integrity, no overwrite, and independent test destinations/error continuation. These use mocked responses; actual redirects/cookies were exercised by the live runs and controls.
-- All **85 repository pytest tests passed**, covering the application, scraper, jobs, environment, and URL helpers. Two upstream dependency deprecation warnings were emitted; no failures.
-- Both complete live `--test` runs above, plus the seven controlled media variants in section 3.
-- Actual Tokai server smoke test with an isolated loopback port: homepage, `/ZMAYuMpFQ/`, and the **rendered** `/media/<media_id>` and `/download/<media_id>` links all returned HTTP 200. Both served MP4s were byte-identical to the standalone example's download; the attachment filename was `7542076400346451232.mp4`. Media IDs now identify in-memory jobs, not the numeric video ID: parse the returned page instead of constructing `/media/<video-id>`. The smoke-test process was stopped afterward.
-- `ffprobe` 5.1.9 on all nine Run 1 files: H.264/AAC, 576 × 1024. Reported container durations for cases 01–05 were 68.367000, 22.434000, 12.634000, 73.067000, and 51.200000 seconds; short-link copies matched.
-- Full `ffmpeg -xerror` audio/video decoding of **all nine Run 1 files**: exit 0, empty stderr.
+All four requested profiles returned account metadata in fresh Python sessions. **Their `userInfo.itemList` was empty, not proof of zero posts.** The frontend subsequently loads posts separately.
 
-Research captures, the offline test harness, and downloaded videos were kept outside the repository in `/tmp/tokai-audit-20260928`. They are temporary local artifacts, not required dependencies or committed fixtures. No cookie values or signed media URLs are committed.
+### Desktop post list — observed, not implemented successfully
 
-Reproduce live media checks from `src/agent` (FFmpeg is optional validation tooling, not a script dependency):
+The source prefetch builds:
+
+```text
+GET /api/post/item_list/
+  aid=1988
+  secUid=<from profile hydration>
+  count=16 (or 24 for one layout branch)
+  cursor=0
+  language=<UI language>
+  coverFormat=<cover setting>
+  video_encoding=<capability-dependent encoding>
+```
+
+The browser adds environment/common fields including `device_id`, `WebIdLastTime`, `odinId`, region/language, browser/platform/version, viewport, timezone, visibility/focus, cookie state, login state, referer, and channel. The observed security query fields were:
+
+| Field | What was established |
+| --- | --- |
+| `msToken` | Browser security/session token; a page-issued token alone did not make the Python post-list request work. |
+| `X-Dynosaur` | Opaque browser-added value; generation not recovered. |
+| `X-Bogus` | Literal `1` in the inspected request, not an assumed historical signer format. Adding `1` alone with a token did not work. |
+| `X-Gnarly` | Opaque browser-added value; generation not recovered. |
+
+Minimal unsigned, `device_platform=webapp`, expanded environment-field, and fresh-page-token variants all returned HTTP 200 with **zero response bytes**. The browser-signed request also yielded no usable list and the page displayed a CAPTCHA. These observations do not establish which checks rejected a particular request or whether signatures alone would suffice. SDK state names are not enough to port an algorithm.
+
+There is no justified claim of recovered signature formulas, complete fingerprint emulation, cursor semantics, or working pagination. Replaying one captured signed request would not be a reusable, independent Python implementation. Consequently the example does not send these known-unsuccessful API probes on every extraction, invent tokens, or import browser state.
+
+### Creator-embed preview — implemented, currently unreliable upstream
+
+The other inspected TikTok frontend is `https://www.tiktok.com/embed/@<handle>`. Its raw HTML can supply a first-party preview without a client-side post-list API request:
+
+```text
+__FRONTITY_CONNECT_STATE__
+  router.link: /embed/@<handle>
+  source.data[router.link]
+    isError / errorCode / pageName: creator
+    userInfo: id, uniqueId, nickname, signature, privateAccount, counts, ...
+    videoList[]
+      id / authorUniqueId / desc / playCount
+      playAddr / coverUrl / width / height / privateItem
+```
+
+The creator handler requests user data using `uniqueID`, then requests ten items using the numeric `userId` and `count:10`. Its service calls carry `x-tt-webid`; the captured server configuration uses a `consul://tiktok.embed.api` prefix. These are frontend/server implementation details, **not** evidence that the same bare API paths are working public endpoints. Direct public GET probes returned 503. The Python script only requests the rendered embed document and parses its state; it does not try to contact internal service addresses.
+
+Implemented chain:
+
+```text
+profile URL → GET desktop document → validated rich account metadata
+                                      │ positive videoCount
+                                      ▼
+                              GET /embed/@handle
+                              parse creator state
+                              cross-check account ID and handle
+                              reject denial or unexplained empty list
+                              skip private/photo/no-playback entries
+                              deduplicate numeric post IDs
+                                      │
+                                      ▼
+                        canonical /@handle/video/<id> URLs
+                                      │
+                                      ▼
+                        example-video.py's fresh extraction
+```
+
+Normally **two GETs**: one for rich desktop metadata (`secUid`, creation time, post count, less-rounded counters), one for the preview. No oEmbed, redundant metadata endpoint, thumbnails, media probes, SDK resource calls, or desktop post-list failure precedes the preview. If the document reports `videoCount == 0`, the script makes no preview request. Redirects or a recognized shell can add requests.
+
+Cross-check both account ID and handle between documents; never treat unrelated recommendations as the profile's posts. Each preview entry must identify the same author. Photo/private/no-playback entries are omitted. A positive post count with no usable preview entries is an error, not a verified empty result.
+
+**This is a preview, not a full archive or guaranteed chronological list.** The observed handler requests ten entries and exposes no recovered pagination interface. `listing.complete` is always `false`; no cursor/has-more value is invented. A successful video URL can still become unavailable before its fresh extraction. The embed's media addresses are not reused for download.
+
+In the final run each embed request returned HTTP 503; separate direct probes showed body `overload-protect triggered`, and some research/browser requests returned 429. The initial successful ten-item response does not override these later failures. Preview availability must be revalidated before relying on this route.
+
+## 5. Validation results
+
+All exact test URLs are constants in the corresponding scripts; their equality to the URLs in `PROMPT.md` was checked offline. No test substitutes a related URL for a supplied case.
+
+### Full live video extraction, fresh session for each input
+
+| Case | Input from PROMPT.md | Video ID | Bytes | GETs | Result |
+| --- | --- | --- | --- | --- | --- |
+| 01 | Full, casamentosemdividas | 7286599702303362310 | 1,686,277 | 2 | PASS |
+| 02 | Full, causanobrecerimonial | 7502602409370307845 | 3,370,911 | 2 | PASS |
+| 03 | Full, metropolesoficial | 7562939840271076615 | 3,559,532 | 2 | PASS |
+| 04 | Full, metropolesoficial | 7544010904229252358 | 6,475,232 | 2 | PASS |
+| 05 | Full, nerublanco | 7542076400346451232 | 7,515,994 | 2 | PASS |
+| 06 | ZMAYuMpFQ | 7542076400346451232 | 7,515,994 | 3 | PASS |
+| 07 | ZMAj83k4w | 7544010904229252358 | 6,475,232 | 3 | PASS |
+| 08 | ZMA4ncut8 | 7562939840271076615 | 3,559,532 | 3 | PASS |
+| 09 | ZMAVwmojg | 7286599702303362310 | 1,686,277 | 3 | PASS |
+
+Each matched its fresh server FileHash. All nine MP4s passed `ffprobe` and full `ffmpeg -xerror` audio/video decoding (H.264/AAC, 576×1024). The video extraction algorithm did not need replacement in this audit; its docstring now identifies the profile URL interface.
+
+### Final live profile test
+
+| Profile | Desktop metadata | Preview request | Complete extraction |
+| --- | --- | --- | --- |
+| https://www.tiktok.com/@casamentosemdividas | PASS | HTTP 503 | FAIL |
+| https://www.tiktok.com/@causanobrecerimonial | PASS | HTTP 503 | FAIL |
+| https://www.tiktok.com/@metropolesoficial | PASS | HTTP 503 | FAIL |
+| https://www.tiktok.com/@nerublanco | PASS | HTTP 503 | FAIL |
+
+Separately, the earlier saved `metropolesoficial` response supplied ten verified-schema candidates. Its first, `7693027940526853384`, passed a **live** video extraction: two GETs, 7,476,553 bytes, matching fresh FileHash, and successful full FFmpeg decode. The profile parser used a saved live capture for that integration check, not a new successful profile request.
+
+### Local checks
+
+- **56 temporary offline pytest cases passed**: URL validation; profile identity/privacy/counts; embed identity, schema, emptiness, filtering and deduplication; cookie retention; request counts; bounded shell recovery; redirect restrictions; error continuation and partial metadata on stderr; exact input lists; captured embed parsing; profile-to-video integration; video integrity and no-overwrite behavior.
+- **100 repository tests passed** with `uv run --no-sync pytest -q`; two upstream dependency deprecation warnings. These existing tests do not establish live profile availability.
+- Syntax compilation and both CLIs' help, missing arguments, mutually exclusive inputs, and unsupported-URL checks passed; these checks do not establish network availability.
+- The seven fresh media controls above and full decoding of all nine supplied-video outputs plus the preview-derived video passed.
+
+One reviewer pass found that truncated/reset/non-UTF-8 embed responses could lose already-fetched account metadata. Expected transport/decoding failures now become `ExtractionError`, preserving metadata; three additional regression cases passed. The review also correctly identified the unresolved live profile requirement as a completion blocker. Fixing local error handling does not resolve that upstream blocker.
+
+Temporary captures, probes, tests, and downloads are under `/tmp/tokai-audit-20261005`, outside the repository. They are diagnostic artifacts, not runtime dependencies or committed fixtures. Raw cookies/signed media URLs are not included in these deliverables. The temporary regression suite can be rerun in this environment with:
 
 ```sh
-python3 example.py --test --output-dir /tmp/tiktok-new-run
-for file in /tmp/tiktok-new-run/case-*/*.mp4; do
+uv run --no-sync pytest -q /tmp/tokai-audit-20261005/test_examples.py
+```
+
+Reproduce media decoding after a new successful `--test` run:
+
+```sh
+for file in /tmp/my-tiktok-video-tests/case-*/*.mp4; do
   ffprobe -v error -show_entries \
     'format=duration,size:stream=codec_name,codec_type,width,height' -of json "$file" || exit 1
   ffmpeg -nostdin -v error -xerror -i "$file" \
@@ -317,16 +355,19 @@ for file in /tmp/tiktok-new-run/case-*/*.mp4; do
 done
 ```
 
-## 6. Boundaries and failure diagnosis
+## 6. Boundaries and next work
 
-| Symptom | Interpretation/action |
+| Symptom | Meaning/action |
 | --- | --- |
-| Short link no longer redirects to a supported video page | Expired/changed link or unsupported destination; extraction stops. |
-| Redirect or hydration ID mismatch | Response does not identify the requested video; no media is saved. |
-| Missing hydration after the recognized-shell retry | Repeated shell, challenge, or changed frontend. No challenge solver or alternate API is attempted. |
-| Nonzero detail status or restriction flag | Content unavailable/restricted in this context; no login, private-content, CAPTCHA, or geographic-restriction bypass. |
-| CDN 403 | Check same-session fresh URL/cookies, Referer, and unchanged signed fields. Changed CDN policy may require reinvestigation. |
-| Container/size/hash failure | Transfer or metadata mismatch; do not count the attempt as successful. |
-| Destination exists | Use a fresh output directory. Short inputs need resolution before the target filename is known, but no media request is made after that collision is detected. |
+| Nonzero detail status, private flags, mismatched identity | Stop; do not substitute another user/post or bypass access restrictions. |
+| Missing hydration, repeated shell, CAPTCHA | Stop after the narrowly recognized shell retry. A browser challenge is not solved by parsing arbitrary HTML. |
+| HTTP-200 empty API response | Failure, not valid empty JSON/list. Desktop API signing remains unresolved. |
+| Embed HTTP 429/503 | Report failure with already-fetched metadata; no automated retry loop or service switch. |
+| Empty creator preview with positive post count | Listing unverified; do not emit a successful empty profile. |
+| Media 403 | Check fresh URL/cookies, Referer, unchanged signed fields; changed CDN policy needs reinvestigation. |
+| Container/size/hash mismatch | No successful output; investigate transfer or schema changes. |
+| Existing MP4 destination | Use a new directory; do not overwrite the file. |
 
-All live claims are limited to the observed date, machine/network, public content, and frontend version. The script relies on TikTok-issued redirects and media addresses; it is a local example, not a hardened server-side fetch service for untrusted users. Availability, signatures, cookie policy, and screening can change. Use only content you are authorized to access and retain. Cookie values, signed URLs, and raw captures are not included in the deliverables.
+To finish the original request, a reliably successful profile-list response must first be observed for **each** target, then its independent Python chain must be implemented and retested. A claim of full desktop API reproduction additionally requires recovering the current signing/environment checks and validating pagination, not merely documenting parameter names. The present code does neither and does not pretend otherwise.
+
+All observations are specific to this date, network, region, public content, and frontend versions. These are local examples, not hardened network services for untrusted input. Use only content you are authorized to access and retain. No files outside the three requested deliverable paths were edited in the repository; pre-existing unrelated changes were preserved.

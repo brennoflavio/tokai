@@ -12,6 +12,11 @@ Privacy-respecting frontend for TikTok. Inspired by Nitter, Proxitok, and OffTik
 
 The same list is available in [instances.json](instances.json).
 
+## We need your help!
+
+Please host public instances of Tokai. We'd like more public instances to make this project more resilient and get more
+testing. [Email me](mailto:contato@brennoflavio.com.br) if you need help.
+
 ## Self-hosting
 
 Only Docker installations are supported at the moment. You can build the image yourself or use one of our pre-built images.
@@ -60,8 +65,8 @@ In short:
 This project makes use of AI in the following forms:
 - The reverse-engineering work of TikTok APIs is fully automated by an AI agent, without human supervision.
   It publishes documentation and examples of how to extract videos from the TikTok front end.
-  See [src/agent/DOCS.md](src/agent/DOCS.md) and [src/agent/example.py](src/agent/example.py) for the current results;
-  the audit instructions are in [src/agent/PROMPT.md](src/agent/PROMPT.md).
+  See [src/agent/DOCS.md](src/agent/DOCS.md), [src/agent/example-video.py](src/agent/example-video.py) and [src/agent/example-profile.py](src/agent/example-profile.py)
+  for the current results; the audit instructions are in [src/agent/PROMPT.md](src/agent/PROMPT.md).
 - From there, the rest of the codebase is either fully coded by humans or AI-assisted (with human review).
 
 The thesis of this project is that capable AI agents can keep up-to-date documentation of how TikTok
