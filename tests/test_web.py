@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 import pytest
 from scraper import ContentUnavailableError, JobCapacityError, TransportError
 
-from web.app import app, compact_count, post_links
+from web.app import UNSUPPORTED_TIKTOK_PATHS, app, compact_count, post_links
 
 client = TestClient(app)
 
@@ -307,6 +307,64 @@ def test_video_route_renders_retrieval_error_when_metadata_fetch_fails(monkeypat
     assert response.headers["content-type"].startswith("text/html")
     assert "Couldn’t retrieve video" in response.text
     assert 'href="/">Go home</a>' in response.text
+
+
+@pytest.mark.parametrize("path", ["/login", "/login/"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",
+        "?redirect_url=https%253A%252F%252Fshop.tiktok.com%252Fbr%252Fpdp%252F1737021021756491574"
+        "&enter_from=product_detail&source=product_detail&enter_method=br_not_login",
+        "?redirect_url=",
+        "?redirect_url=%ZZ",
+        "?redirect_url=https%3A%2F%2Fexample.com%2Fprivate",
+        "?redirect_url=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+    ],
+)
+def test_login_path_renders_error_without_scraping(monkeypatch, path: str, query: str) -> None:
+    jobs = use_fake_jobs(monkeypatch, prepare_error=AssertionError("Must not scrape login paths"))
+
+    response = client.get(f"{path}{query}", follow_redirects=False)
+
+    assert response.status_code == 403
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<title>TokAI - Login required</title>" in response.text
+    assert '<h1 id="error-title">Login required</h1>' in response.text
+    assert "This content requires a TikTok login. TokAI only supports public videos." in response.text
+    assert "Try again later" not in response.text
+    assert "redirect_url" not in response.text
+    assert "<script" not in response.text
+    assert 'href="/">Go home</a>' in response.text
+    assert jobs.prepared_identifiers == []
+    assert jobs.media_ids == []
+
+
+@pytest.mark.parametrize("path", ["/future", "/future/"])
+def test_additional_unsupported_paths_use_the_configured_error(monkeypatch, path: str) -> None:
+    monkeypatch.setitem(
+        UNSUPPORTED_TIKTOK_PATHS,
+        "future",
+        {"status_code": 400, "title": "Unsupported content", "message": "Only public videos are supported."},
+    )
+    jobs = use_fake_jobs(monkeypatch, prepare_error=AssertionError("Must not scrape unsupported paths"))
+
+    response = client.get(path, follow_redirects=False)
+
+    assert response.status_code == 400
+    assert '<h1 id="error-title">Unsupported content</h1>' in response.text
+    assert "Only public videos are supported." in response.text
+    assert jobs.prepared_identifiers == []
+
+
+def test_unsupported_paths_do_not_block_short_codes_with_the_same_prefix(monkeypatch) -> None:
+    jobs = use_fake_jobs(monkeypatch)
+    monkeypatch.setenv("TOKAI_APP_URL", "https://tokai.example.com")
+
+    response = client.get("/loginish/")
+
+    assert response.status_code == 200
+    assert jobs.prepared_identifiers == ["loginish"]
 
 
 def test_video_route_renders_capacity_error_when_job_registry_is_full(monkeypatch) -> None:

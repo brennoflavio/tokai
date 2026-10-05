@@ -27,6 +27,13 @@ MEDIA_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
 SHORT_CODE_PATH_RE = re.compile(r"([A-Za-z0-9]+)/?")
 VIDEO_PATH_RE = re.compile(r"^@[A-Za-z0-9_.]*/video/([0-9]+)/?$")
 RESERVED_PATHS = frozenset({"docs", "redoc", "static", "media", "download"})
+UNSUPPORTED_TIKTOK_PATHS = {
+    "login": {
+        "status_code": 403,
+        "title": "Login required",
+        "message": "This content requires a TikTok login. TokAI only supports public videos.",
+    },
+}
 TIKTOK_VIDEO_HOSTS = frozenset({"tiktok.com", "www.tiktok.com", "m.tiktok.com"})
 TIKTOK_SHORT_LINK_HOSTS = frozenset({"vm.tiktok.com", "vt.tiktok.com"})
 
@@ -203,6 +210,11 @@ async def download(request: Request, media_id: str):
 @app.get("/{tiktok_path:path}", include_in_schema=False)
 async def video(request: Request, tiktok_path: str):
     """Render a supported TikTok video without client-side code."""
+    unsupported_path = UNSUPPORTED_TIKTOK_PATHS.get(tiktok_path.rstrip("/"))
+    if unsupported_path is not None:
+        logger.debug("Rejected video page: unsupported TikTok path path=%s", tiktok_path)
+        return retrieval_error(request, **unsupported_path)
+
     if tiktok_path.rstrip("/") in RESERVED_PATHS:
         logger.debug("Rejected video page: reserved path")
         raise HTTPException(status_code=404, detail="TikTok video path not found")
