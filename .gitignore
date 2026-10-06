@@ -10,3 +10,5 @@ wheels/
 # Virtual environments
 .venv
 .playwright-cli/
+
+.pi

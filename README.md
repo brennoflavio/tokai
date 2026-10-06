@@ -59,9 +59,8 @@ In short:
 
 This project makes use of AI in the following forms:
 - The reverse-engineering work of TikTok APIs is fully automated by an AI agent, without human supervision.
-  It publishes documentation and examples of how to extract videos from the TikTok front end.
-  See [src/agent/DOCS.md](src/agent/DOCS.md) and [src/agent/example.py](src/agent/example.py) for the current results;
-  the audit instructions are in [src/agent/PROMPT.md](src/agent/PROMPT.md).
+  It publishes documentation and examples of how Tiktok front end works.
+  See the [video results](src/agent/video/DOCS.md) and [SDK results](src/agent/sdk/DOCS.md).
 - From there, the rest of the codebase is either fully coded by humans or AI-assisted (with human review).
 
 The thesis of this project is that capable AI agents can keep up-to-date documentation of how TikTok
