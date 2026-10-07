@@ -8,6 +8,8 @@
 
 Two fresh Python sessions each retrieved an initial page and a continuation for **both** `laila_verissimo` and `metropolesoficial`. All eight listing requests returned HTTP 200 over HTTP/2, JSON with both status fields zero, expected authors/items, and cursor progress. Each continuation supplied 16 new post IDs. **No browser cookies, captured signatures, remote signer, or JavaScript runtime were used by those Python sessions.**
 
+Those are initial bounded validation results, not a continuing reliability guarantee. Later checks included accepted requests through both httpx and wreq, missing initial tokens and empty HTTP-200 refusals; [follow-up experiments](#follow-up-dtk-and-transport-experiments-2026-10-07-utc) record the current evidence.
+
 This is not a port of the whole security SDK or a universal TikTok client. The supported mode uses source-defined initial collector state, the missing-canvas branch, and no initialized security extension. The extension's populated proof mode is not implemented; its absent-state branch is generated from source defaults, not replayed proof values. Acceptance is established for this endpoint/mode and test matrix, not every region, network, account, SDK version, or future server policy.
 
 Files:
@@ -270,3 +272,38 @@ After the fixes, all **20 offline tests** passed and the final `--validate-live`
 - 2026-10-06: initial acquisition/investigation; matching core and extension identified; Playwright challenge and tool limitations reported without claiming a signer.
 - 2026-10-06–07: partial X-Gnarly implementation; two isolated-source vectors and five private browser comparisons; ten offline tests and CLI error-boundary review fix.
 - 2026-10-07: recovered X-Dynosaur's absent-extension path, seed/RNG generation, initial/missing-canvas state, explicit Python bootstrap/token refresh, and HTTP/2 transport. Two fresh Python sessions passed both public targets and pagination with newly generated fields; complete-source vectors and expanded offline tests added. SDKs, timeline files, root captures and manifests preserved.
+
+## Follow-up: DTK and transport experiments (2026-10-07 UTC)
+
+[Evil0ctal/Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) (DTK v5.1.3, inspected revision `4f0bed8483c35a980315d9c7b3a1d4a1119ad2b2`) is a promising profile-scraping backend candidate. It uses Chromium/CloakBrowser for fresh guest-session minting, pure-Python native request signing and browser-emulated `wreq` for upstream HTTP acquisition. Optional browser signing fallback was not used in our tests. **Pure-Python signatures do not make its session-acquisition workflow browser-free.**
+
+DTK's TikTok signer emits X-Dynosaur, msToken, literal `X-Bogus=1` and X-Gnarly. Its source fields declare `5.3.2` / `2.0.0.561`, whereas this implementation derives from `5.3.2` / `1.0.0.417`; payload/environment/checksum details also differ. A version-string substitution is not an algorithm update, and these differences are not established as the cause of our refusals.
+
+### Accepted signatures do not guarantee stable acquisition
+
+The DTK source-level pipeline fetched two pages for both public profiles in each of two fresh browser-minted sessions: 33 distinct posts for Laila and 32 for Metrópoles per session, with parsing and cursor progress verified. This tested native signing, not the full REST/database deployment, complete account histories or sustained reliability.
+
+A separate matched-context crossover preserved the exact signed URL, explicit headers and cookies within transport pairs. The interpretable DTK-query phase yielded 8 accepted `wreq` requests and 8 empty HTTP-200 `httpx` responses across both profiles, both signers and HTTP/browser-acquired credentials. Refusals carried `tt_orcas_res`. Thus our local signer produced accepted requests; replacing its algorithm is not yet justified by these observations.
+
+This did **not** isolate TLS from HTTP/2 settings, header ordering, connection reuse/history or other client behavior. The shared wreq client began with browser-session controls. Later query comparisons lost positive controls, and standalone HTTP-only follow-ups also failed their controls and stopped. Browser minting failed once too. Session validity, network/exit policy and time-varying protection remain unresolved; do not claim proven rate limiting, a universal token-length threshold or a reliable transport-only fix.
+
+### Tests of the original examples with wreq
+
+A temporary adapter preserved original request serialization, headers, scoped cookies/response updates, query builders, signing state and validation. It changed network acquisition only. No browser, imported cookies, DTK signer or JavaScript runtime was used. Original Firefox 157 User-Agents were retained; the installed wreq had only Firefox151 desktop emulation, which is a known mismatch.
+
+| Original sign example | Emulated wreq | httpx | wreq without explicit browser profile |
+| --- | --- | --- | --- |
+| `laila_verissimo` | 17 + 16 items; 33 distinct posts | Same | Same |
+| `metropolesoficial` | Empty HTTP 200 | Same | Same |
+
+Laila's application status, author identity and continuation/new-ID checks passed in every mode. This helper validates **post lists**, not video-only normalization, so do not report all 33 items as confirmed videos. The timeline example also obtained valid listing pages but failed with `unsupported video metadata`. A later inspection attempt was refused before data arrived; the rejected schema field/media type is unknown.
+
+**The TLS-only hypothesis is not confirmed.** Explicit browser emulation was neither necessary nor sufficient in this run. The results support browser-free signing/retrieval feasibility, not consistent access or DTK's proven long-term superiority.
+
+### Evidence and maintenance
+
+Full endpoint/pagination/normalization findings and the cross-example result table are in [timeline section 10](../timeline/DOCS.md#10-dtk-backend-and-transport-comparison-2026-10-07-utc). Tracking: [Forgejo issue #11](https://git.brennoflavio.com.br/brennoflavio/tokai/issues/11).
+
+The 20 signer and 18 timeline offline tests passed; the temporary transport adapter's cookie-scope/header/HTTP2 regression passed. Scratch reports are `/tmp/tiktok-api-inspect-karoVc/ISOLATION_FINDINGS.md` and `/tmp/tokai-wreq-examples-CQ7Uud/FINDINGS.md`, with redacted results alongside them. These ephemeral artifacts contain no cookie/token values or signed URLs and are not runtime dependencies.
+
+The repository examples and manifests were not changed by the experiments; wreq is not an implemented example option. Preserve the signer while investigating transport/session conditions independently, retain failed controls, and resolve video-only normalization separately from acceptance. An eventual Chromium-minted DTK integration would require an explicit decision to change the browser-free requirement.

@@ -6,7 +6,7 @@
 
 **This endpoint returns a page of a user's own profile posts, with enough metadata to build a video publication timeline.** It is an internal TikTok web endpoint, not a documented, stable public API contract.
 
-**Current implementation:** [`example.py`](example.py) implements a bounded, deduplicated, newest-first video timeline using fresh Python-only sessions and a local port of the signer. Initial live first-page/continuation validation passed on **2026-10-07 UTC**, but subsequent checks encountered empty HTTP-200 listing responses, including with the original fixed-context signer. Python-only retrieval is demonstrated, not consistently reliable access; see [implementation and validation](#9-python-only-timeline-example) below. The capture analysis that follows is historical evidence, not the current implementation status.
+**Current implementation:** [`example.py`](example.py) implements a bounded, deduplicated, newest-first video timeline using fresh Python-only sessions and a local port of the signer. Initial live first-page/continuation validation passed on **2026-10-07 UTC**, but subsequent checks encountered empty HTTP-200 listing responses, including with the original fixed-context signer. Python-only retrieval is demonstrated, not consistently reliable access; see [implementation and validation](#9-python-only-timeline-example) below. Later DTK/wreq comparisons retrieved valid post-list pages but also exposed a separate video-normalization limitation; [section 10](#10-dtk-backend-and-transport-comparison-2026-10-07-utc) records the results and why neither TLS-only remediation nor DTK's sustained reliability is established. The capture analysis that follows is historical evidence, not the current implementation status.
 
 Evidence inspected in the original offline investigation:
 
@@ -508,3 +508,53 @@ One reviewer pass produced one finding:
 No automatic second review was performed. SDK/signing constants were not changed to mask the live rejection.
 
 When the signer or SDK changes, compare this intentional local port against the updated signer and independent reference vectors before promotion, then rerun bounded fresh-session acceptance checks. Do not silently replace failed signing with replayed fields or another runtime workflow.
+
+## 10. DTK backend and transport comparison (2026-10-07 UTC)
+
+### Promising backend, not a proven replacement
+
+[Evil0ctal/Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) (DTK, inspected revision `4f0bed8483c35a980315d9c7b3a1d4a1119ad2b2`, v5.1.3) implements TikTok profile lookup and paginated author posts. Its REST routes are `/api/v1/tiktok/user` and `/api/v1/tiktok/user/posts`; the upstream listing endpoint is the same `/api/post/item_list/` used here. It also supplies session/identity management, browser-fingerprint emulation, pacing and response classification.
+
+Its native request path is **hybrid**, not browser-free: CloakBrowser/Chromium mints fresh guest cookies and browser context, then pure-Python X-Dynosaur/X-Gnarly signing and `wreq` send listing requests without a browser in each request. Browser-based signing fallback is optional and was **not used** in this evaluation. Imported cookies can avoid automated minting but are not independent browser-free acquisition.
+
+The DTK source-level mint/sign/transport/parser pipeline was tested locally without deploying its REST service, PostgreSQL or Redis:
+
+| Fresh browser-minted session | Profile | Page items | Distinct posts |
+| --- | --- | --- | ---: |
+| 1 | `laila_verissimo` | 17 + 16 | 33 |
+| 1 | `metropolesoficial` | 16 + 16 | 32 |
+| 2 | `laila_verissimo` | 17 + 16 | 33 |
+| 2 | `metropolesoficial` | 16 + 16 | 32 |
+
+Identity checks, application statuses, DTK parsing and cursor/new-ID progress passed. Both feeds still had more pages; these were bounded post lists, not complete account archives or a guarantee that every item was a video. A later Chromium mint failed with a short token, so browser acquisition is not infallible. These results make DTK a promising backend candidate, **not proof of sustained reliability or a completed integration**.
+
+### Controlled transport experiment
+
+A matched Chrome-context crossover used the same signed URL, explicit headers, cookies, target and query within each transport pair. Across two profiles, two session-acquisition origins and both signers, the interpretable DTK-query phase produced **8 accepted `wreq` requests versus 8 empty HTTP-200 `httpx` responses**. Refusals carried `tt_orcas_res`; all requests negotiated HTTP/2. Both signers were accepted, including this example's local signer.
+
+This demonstrates client-configuration-dependent acceptance in that run, not TLS alone: HTTP/2 settings, header ordering, connection history/reuse and other client differences were not individually isolated. The shared `wreq` client first carried browser-session controls. HTTP-acquired credentials sufficed for later requests, but this crossover alone was not an independent standalone browser-free reliability test.
+
+Later query treatments lost their positive controls and were excluded from causal conclusions. Fresh HTTP-only confirmation attempts, including isolated clients and corrected pacing/query reuse, failed their positive controls and stopped. Missing initial tokens were also observed. Neither `wreq` nor token length alone is established as a reliable fix; rate limiting or a blanket IP block was not proven.
+
+### Original examples with a transport-only adapter
+
+A subsequent fresh-session test kept the original `sign` and `timeline` bootstrap, query builders, signing/state progression and validation. A temporary adapter retained httpx request serialization and domain/path-scoped cookie updates while switching network acquisition to `wreq`. No DTK signing/session logic, imported browser cookies, Chromium or SDK execution was used. Headers were preserved and requests spaced nine seconds apart. The original Firefox 157 User-Agents were retained; installed `wreq` only offered desktop Firefox profiles through 151, so emulation had a six-major-version mismatch.
+
+| Example | Profile | Emulated `wreq`: accepted page items | `httpx`: accepted page items | `wreq` without explicit profile: accepted page items |
+| --- | --- | --- | --- | --- |
+| timeline | `laila_verissimo` | 17 + 16 | Bootstrap failed: no token | 17 + 16 |
+| timeline | `metropolesoficial` | 16 | 16 | 16 |
+| sign | `laila_verissimo` | 17 + 16 | 17 + 16 | 17 + 16 |
+| sign | `metropolesoficial` | Empty HTTP 200 | Empty HTTP 200 | Empty HTTP 200 |
+
+**Retrieval and normalization must be tracked separately.** Every timeline run that obtained data then failed with `unsupported video metadata`; none completed normalized timeline output. This may be legitimate unsupported media or a schema mismatch, not necessarily a parser bug. A bounded follow-up to identify the rejected field received empty listing responses for both profiles, so the field/media type remains unknown. No guards were relaxed or unsupported posts silently dropped.
+
+The sign example completed Laila's two pages with 33 distinct **posts** in all three modes; it does not apply the video-only timeline normalizer. Explicit browser emulation was neither necessary nor sufficient in this run. Because these were fresh sessions at different times, not identical credentials across arms, the test establishes functionality rather than a TLS-only cause or comparative long-term reliability.
+
+### Validation, evidence and next steps
+
+- Original offline tests: 18 timeline and 20 signer tests passed. The temporary adapter's duplicate Set-Cookie, domain/path scoping, header-preservation and HTTP/2-response regression passed.
+- Temporary diagnostics: `/tmp/tiktok-api-inspect-karoVc/ISOLATION_FINDINGS.md` and `/tmp/tokai-wreq-examples-CQ7Uud/FINDINGS.md`, with redacted JSON results alongside them. These are ephemeral investigation artifacts, not runtime dependencies or committed test fixtures.
+- No scraper implementation, dependency manifest or browser-free requirement was replaced by these experiments. The original examples still use httpx; a temporary adapter is not an implemented wreq option.
+- Keep signing intact while evaluating transport/session stability and the normalization limitation separately. Benchmark DTK and the original examples with interleaved fresh sessions, passing positive controls and pagination before choosing a replacement.
+- Tracking: [Forgejo issue #11 — We cannot reliably scrape profiles yet](https://git.brennoflavio.com.br/brennoflavio/tokai/issues/11). A browser-minted backend would be a deliberate change from that issue's browser-free completion criterion, not a silent substitute.
