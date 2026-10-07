@@ -12,6 +12,13 @@ Privacy-respecting frontend for TikTok. Inspired by Nitter, Proxitok, and OffTik
 
 The same list is available in [instances.json](instances.json).
 
+## Community
+
+Join our Matrix room: [#tokai:brennoflavio.com.br](https://matrix.to/#/#tokai:brennoflavio.com.br)
+
+We are looking for feedback and more self hosted instances, so we can have more usage, fix bugs with
+the reverse engineer projects. Join Matrix if you want to help the project.
+
 ## Self-hosting
 
 Only Docker installations are supported at the moment. You can build the image yourself or use one of our pre-built images.
